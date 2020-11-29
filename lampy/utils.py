@@ -1,3 +1,5 @@
+import sys
+import os
 from functools import wraps
 
 def cache(f):
@@ -27,3 +29,7 @@ def cache(f):
         return _cache
     return _
 
+
+def trace(msg: str, i=0):
+    if os.getenv("LAMPY_TRACE", False):
+        print(f"{'  ' * i}{msg}", file=sys.stderr)

@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 import sys
 import doctest
+import unittest
 from pathlib import Path
 from importlib import import_module
 
 
-from lampy import lampy
+from lampy import lampy, utils
 
 
-if __name__ == "__main__":
-    options = doctest.ELLIPSIS
-    for fil in Path("lampy").glob("*.py"):
-        if fil.name.startswith("__"):
-            continue
-        mod = import_module(f"lampy.{fil.stem}")
-        doctest.testmod(mod)
+def load_tests(loader, tests, ignore):
+    tests.addTests(doctest.DocTestSuite(lampy))
+    tests.addTests(doctest.DocTestSuite(utils))
+    return tests
+

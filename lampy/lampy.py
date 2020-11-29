@@ -44,7 +44,7 @@ from collections import namedtuple
 from functools import reduce
 from pprint import pprint
 
-from .utils import cache
+from .utils import cache, trace
 
 
 _bound_vars = set()
@@ -223,7 +223,7 @@ def appl(lam: "Lamb", term: Term, i = 0):
     """
     res = lam.replace(lam.var, term)
     if isinstance(res, Lamb):
-        print(f"{'  ' * i}appl({lam}, {term}) => {res.body}", file=sys.stderr)
+        trace(f"appl({lam}, {term}) => {res.body}", i)
         return res.body
 
     raise TypeError(f"{res} is not a lambda")
@@ -243,7 +243,7 @@ def eval_term(term: Term, i = 0) -> Term:
     >>> eval_term(Appl(Lamb(Var("x"), Var("x")), Lamb(Var("y"), Var("y"))))
     (λy.y)
     """
-    print(f"{'  ' * i}eval({term})", file=sys.stderr)
+    trace(f"eval({term})", i)
     if isinstance(term, Appl):
         e1 = eval_term(term.e1, i+1)
         e2 = eval_term(term.e2, i+1)
@@ -280,7 +280,6 @@ class AST:
         t = eval_term(self.root)
         while not t.is_norm:
             t = eval_term(t)
-        print("", file=sys.stderr)
         return t
 
 
