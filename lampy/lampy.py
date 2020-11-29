@@ -44,6 +44,8 @@ from collections import namedtuple
 from functools import reduce
 from pprint import pprint
 
+from .utils import cache
+
 
 _bound_vars = set()
 
@@ -331,11 +333,10 @@ def BNF() -> ParserElement:
         )
     )
 
-
     appl_ <<= var + appl_[...]  # applseq("e2")
     appl = appl_ | NoMatch()  # add no match to create a new rule
 
-    term <<= abst | appl | var 
+    term <<= abst | appl | binexpr | var
 
     term.ignore(comment)
     ID.setParseAction(to_variable)
@@ -350,6 +351,22 @@ def BNF() -> ParserElement:
 
     return term
 
+def arit_BNF(atom: ParserElement) -> ParserElement:
+    e = Forward()
+    LP, RP = map(Literal, "()")
+
+    binexpr = infixNotation(
+        atom,
+        (
+            (oneOf("* /"), 2, opAssoc.LEFT),
+            (oneOf("+ -"), 2, opAssoc.LEFT),
+        )
+    )
+
+    e <<= LP + e + RP | binexpr | var
+
+    return e
+
 
 def parse(input: str) -> AST:
     return AST(BNF().parseString(input, True)[0])
@@ -357,7 +374,7 @@ def parse(input: str) -> AST:
 
 if __name__ == "__main__":
     BNF().runTests(
-        """
+       """
        # Simple abstraction
        fn x => x y y
 
@@ -381,5 +398,11 @@ if __name__ == "__main__":
 
        # Parenthesis
        x z (y z)
+
        """
     )
+
+    aritBNF().runTests("""
+    1 * (2 + 3) 
+    """)
+
