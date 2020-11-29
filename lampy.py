@@ -114,7 +114,7 @@ class BinOp(Term):
     >>> eval_term(BinOp("+", Val("1"), Val("1")))
     2
 
-    >>> AST([Appl(Lamb(Var("x"), BinOp("+", Var("x"), Val("1"))), Val("2"))]).eval()
+    >>> AST(Appl(Lamb(Var("x"), BinOp("+", Var("x"), Val("1"))), Val("2"))).eval()
     3
     """
 
@@ -257,8 +257,8 @@ def eval_term(term: Term, i = 0) -> Term:
 
 
 class AST:
-    def __init__(self, parse_tree: ParseResults):
-        self.parse_results = parse_tree
+    def __init__(self, root: Term):
+        self.root = root
 
     def eval(self):
         """
@@ -275,9 +275,7 @@ class AST:
         1
         """
         _reset_bound_vars()
-        t = eval_term(self.parse_results[0])
-        if t is None:
-            __import__('pdb').set_trace()
+        t = eval_term(self.root)
         while not t.is_norm:
             t = eval_term(t)
         print("", file=sys.stderr)
@@ -304,6 +302,9 @@ def BNF() -> ParserElement:
     def to_val(t) -> Val:
         return Val(t[0])
 
+    def to_bin(t) -> BinOp:
+        return BinOp(t[0][1], t[0][0], t[0][2])
+
     ID = Word(alphas, exact=1)
     VAL = Word(nums)
     FN = Literal("fn").suppress()
@@ -321,14 +322,25 @@ def BNF() -> ParserElement:
 
     var = ID | VAL | LP + term + RP
 
+    # Binary expression
+    binexpr = infixNotation(
+        var,
+        (
+            (oneOf("* /"), 2, opAssoc.LEFT),
+            (oneOf("+ -"), 2, opAssoc.LEFT),
+        )
+    )
+
+
     appl_ <<= var + appl_[...]  # applseq("e2")
     appl = appl_ | NoMatch()  # add no match to create a new rule
 
-    term <<= abst | appl | var
+    term <<= abst | appl | var 
 
     term.ignore(comment)
     ID.setParseAction(to_variable)
     VAL.setParseAction(to_val)
+    binexpr.setParseAction(to_bin)
     abst.setParseAction(to_lambda)
     appl.setParseAction(to_application)
 
@@ -340,7 +352,7 @@ def BNF() -> ParserElement:
 
 
 def parse(input: str) -> AST:
-    return AST(BNF().parseString(input, True))
+    return AST(BNF().parseString(input, True)[0])
 
 
 if __name__ == "__main__":
@@ -371,6 +383,3 @@ if __name__ == "__main__":
        x z (y z)
        """
     )
-
-    # Testing parsing and application
-    print(">>>", appl(BNF().parseString("fn x => fn y => x y", True)[0], Var("1")))
