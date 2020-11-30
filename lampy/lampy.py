@@ -121,10 +121,10 @@ class BinOp(Term):
     """
 
     opmap = {
-            '+': op.add,
-            '*': op.mul,
-            '/': op.truediv,
-            '-': op.sub,
+        "+": op.add,
+        "*": op.mul,
+        "/": op.truediv,
+        "-": op.sub,
     }
 
     def __init__(self, op: str, a: Term, b: Term):
@@ -208,7 +208,7 @@ class Appl(Term):
         return f"{self.e1} {self.e2}"
 
 
-def appl(lam: "Lamb", term: Term, i = 0):
+def appl(lam: "Lamb", term: Term, i=0):
     """
     >>> appl(Lamb(Var("x"), Var("x")), Val("1"))
     1
@@ -229,7 +229,7 @@ def appl(lam: "Lamb", term: Term, i = 0):
     raise TypeError(f"{res} is not a lambda")
 
 
-def eval_term(term: Term, i = 0) -> Term:
+def eval_term(term: Term, i=0) -> Term:
     """
     Abstration evaluate to it self
     >>> eval_term(Lamb(Var("x"), Var("x")))
@@ -245,13 +245,13 @@ def eval_term(term: Term, i = 0) -> Term:
     """
     trace(f"eval({term})", i)
     if isinstance(term, Appl):
-        e1 = eval_term(term.e1, i+1)
-        e2 = eval_term(term.e2, i+1)
+        e1 = eval_term(term.e1, i + 1)
+        e2 = eval_term(term.e2, i + 1)
         if isinstance(e1, Lamb):
-            return appl(e1, e2, i+1)
+            return appl(e1, e2, i + 1)
     elif isinstance(term, BinOp):
-        a = eval_term(term.a, i+1)
-        b = eval_term(term.b, i+1)
+        a = eval_term(term.a, i + 1)
+        b = eval_term(term.b, i + 1)
         if isinstance(a, Val) and isinstance(b, Val):
             return Val(term.opfun(a.val, b.val))
 
@@ -283,12 +283,29 @@ class AST:
         return t
 
 
+@cache
+def arit_BNF(atom: ParserElement) -> ParserElement:
+    e = Forward()
+    LP, RP = map(Literal, "()")
+
+    binexpr = infixNotation(
+        atom,
+        (
+            (oneOf("* /"), 2, opAssoc.LEFT),
+            (oneOf("+ -"), 2, opAssoc.LEFT),
+        ),
+    )
+
+    e <<= LP + e + RP | binexpr | atom
+
+    return e
+
+
+@cache
 def BNF() -> ParserElement:
     """
     Our grammar
     """
-    if hasattr(BNF, "cache"):
-        return BNF.cache  # type: ignore
 
     def to_lambda(t):
         return Lamb(Var(t.arg), t.body.asList()[0])
@@ -329,7 +346,7 @@ def BNF() -> ParserElement:
         (
             (oneOf("* /"), 2, opAssoc.LEFT),
             (oneOf("+ -"), 2, opAssoc.LEFT),
-        )
+        ),
     )
 
     appl_ <<= var + appl_[...]  # applseq("e2")
@@ -346,25 +363,7 @@ def BNF() -> ParserElement:
 
     term.validate()
 
-    BNF.cache = term  # type: ignore
-
     return term
-
-def arit_BNF(atom: ParserElement) -> ParserElement:
-    e = Forward()
-    LP, RP = map(Literal, "()")
-
-    binexpr = infixNotation(
-        atom,
-        (
-            (oneOf("* /"), 2, opAssoc.LEFT),
-            (oneOf("+ -"), 2, opAssoc.LEFT),
-        )
-    )
-
-    e <<= LP + e + RP | binexpr | var
-
-    return e
 
 
 def parse(input: str) -> AST:
@@ -373,7 +372,7 @@ def parse(input: str) -> AST:
 
 if __name__ == "__main__":
     BNF().runTests(
-       """
+        """
        # Simple abstraction
        fn x => x y y
 
@@ -401,7 +400,8 @@ if __name__ == "__main__":
        """
     )
 
-    aritBNF().runTests("""
+    arit_BNF().runTests(
+        """
     1 * (2 + 3) 
-    """)
-
+    """
+    )
