@@ -29,24 +29,23 @@ class Parser(SlyParser):
     """
     term : appl | abst | var
     var  : ID | NUMBER | "(" term ")"
-    appl : term term
+    appl : appl term
     asbt : fn ID => term
 
     >>> parse("fn x => fn y => x").eval()
     (λx.(λy.x))
 
     >>> parse("(fn x => fn y => x) 1 2").eval()
+    1
     """
+
+    debugfile = "parser.out"
 
     tokens = Lex.tokens
 
     @_("appl", "lamb", "var")
     def term(self, p):
         return p[0]
-
-    @_("LPAR term RPAR")
-    def term(self, p):
-        return p.term
 
     @_("ID")
     def var(self, p):
@@ -56,13 +55,17 @@ class Parser(SlyParser):
     def var(self, p):
         return Val(p.NUMBER)
 
-    @_("term term")
+    @_("LPAR term RPAR")
+    def var(self, p):
+        return p.term
+
+    @_("term var")
     def appl(self, p):
         """
         >>> parse("x x").eval()
         x x
         """
-        return Appl(p.term0, p.term1)
+        return Appl(p.term, p.var)
 
     @_("FN ID DARROW term")
     def lamb(self, p):
