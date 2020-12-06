@@ -1,2 +1,1 @@
-pyparsing==2.4.7
-sly==0.4
+lark==0.11.1
