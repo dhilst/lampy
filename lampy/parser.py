@@ -1,86 +1,66 @@
-from sly import Lexer, Parser as SlyParser
+from lark import Lark
+from lark.visitors import Transformer as LarkTransformer
 
-from .lampy import Var, Val, Lamb, Appl, AST
+from lampy.lampy import Var, Val, Appl, Lamb, BinOp, AST
 
+grammar = r"""
+    module: stmt+
+    stmt : term+ ";"
 
-class Lex(Lexer):
-    """
-    >>> list(Lex().tokenize("fn x => x"))
-    [Token(type='FN', value='fn', lineno=1, index=0), Token(type='ID', value='x', lineno=1, index=3), Token(type='DARROW', value='=>', lineno=1, index=5), Token(type='ID', value='x', lineno=1, index=8)]
-    """
+    ?term : lamb
+    ?lamb : ID+ "=>" term | bin_expr
 
-    tokens = {ID, NUMBER, FN, PLUS, MINUS, TIMES, DIVIDE, LPAR, RPAR, DARROW}
+    ?bin_expr : bin_expr plusop numfactor
+             | numfactor
+    ?numfactor: numfactor mulop appl
+             | appl
 
-    ignore = "\t\n "
+    ?appl : appl val | val
 
-    ID = r"[w-z]"
-    NUMBER = r"\d+"
-    PLUS = r"\+"
-    MINUS = r"-"
-    TIMES = r"\*"
-    DIVIDE = r"/"
-    LPAR = r"\("
-    RPAR = r"\)"
-    FN = r"fn"
-    DARROW = r"=>"
+    ?val : "(" term ")"
+         | ID -> var
+         | SIGNED_NUMBER -> val
 
+    ID : /[a-z]/
+    !?mulop : "*" | "/"
+    !?plusop: "+" | "-"
 
-class Parser(SlyParser):
-    """
-    term : appl | abst | var
-    var  : ID | NUMBER | "(" term ")"
-    appl : appl term
-    asbt : fn ID => term
+    %import common.SIGNED_NUMBER
+    %import common.WS
+    %import common.SH_COMMENT
+    %ignore WS
+    %ignore SH_COMMENT
+"""
 
-    >>> parse("fn x => fn y => x").eval()
-    (λx.(λy.x))
-
-    >>> parse("(fn x => fn y => x) 1 2").eval()
-    1
-    """
-
-    debugfile = "parser.out"
-
-    tokens = Lex.tokens
-
-    @_("appl", "lamb", "var")
-    def term(self, p):
-        return p[0]
-
-    @_("ID")
-    def var(self, p):
-        return Var(p.ID)
-
-    @_("NUMBER")
-    def var(self, p):
-        return Val(p.NUMBER)
-
-    @_("LPAR term RPAR")
-    def var(self, p):
-        return p.term
-
-    @_("term var")
-    def appl(self, p):
-        """
-        >>> parse("x x").eval()
-        x x
-        """
-        return Appl(p.term, p.var)
-
-    @_("FN ID DARROW term")
-    def lamb(self, p):
-        """
-        >>> parse("fn x => x").eval()
-        (λx.x)
-        """
-        return Lamb(Var(p.ID), p.term)
+lamb_parser = Lark(grammar, start="module")
 
 
-def parse(input: str):
-    return AST(Parser().parse(Lex().tokenize(input)))
+class Transformer(LarkTransformer):
+    def lamb(self, tree):
+        *args, lastarg, body = tree
+        lamb = Lamb(Var(lastarg.value), body)
+        # fold lambdas
+        for arg in reversed(args):
+            lamb = Lamb(Var(arg.value), lamb)
+        return lamb
+
+    def bin_expr(self, tree):
+        a, op, b = tree
+        return BinOp(op, a, b)
+
+    def appl(self, tree):
+        e1, e2 = tree
+        return Appl(e1, e2)
+
+    def var(self, tree):
+        return Var(tree[0])
+
+    def val(self, tree):
+        return Val(float(tree[0]))
+
+    def stmt(self, tree):
+        return AST(tree[0])
 
 
-if __name__ == "__main__":
-    import doctest
-
-    doctest.testmod()
+def parse(input_):
+    return Transformer().transform(lamb_parser.parse(input_)).children

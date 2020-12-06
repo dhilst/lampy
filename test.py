@@ -3,10 +3,7 @@ import sys
 import doctest
 import unittest
 
-from pyparsing import Word, nums  # type: ignore
-
-from lampy import lampy, utils
-from lampy.lampy import BNF, arit_BNF
+from lampy import lampy, utils, parser
 
 
 def load_tests(loader, tests, ignore):
@@ -16,38 +13,32 @@ def load_tests(loader, tests, ignore):
 
 
 class Test(unittest.TestCase):
-    def test_bnf(self):
-        BNF().runTests(
-            """
-           # Simple abstraction
-           fn x => x y y
+    def test_parse(self):
+        return
+        print(
+            parser.lamb_parser.parse(
+                """
+            (a);
+            (a b);
+            a b c d;
 
-           # Chainned abstrxction
-           fn x => fn y => x y
+            (x y => x) 1 2;
+            x => x;
+            x y z => x z (y z);
 
-           # Abstraction application
-           (fn x => x y) (fn x => x)
+            a b => a + b;
+            a b => a + b * a;
+            a b => a * b + a;
 
-           # Try left associativity of appliction
-           u v w x y z
-
-           # Simple xpplicxtion
-           (fn x => x) a
-
-           # ɑ conversion needed
-           (fn x => x y) a
-
-           # Value
-           1
-
-           # Parenthesis
-           x z (y z)
-
-           """
+            a b c => a b + c;
+            a b c => a (b + c);
+        """
+            ).pretty()
         )
 
-        arit_BNF(Word(nums)).runTests(
-            """
-            1 * (2 + 3)
-            """
-        )
+        input_ = """
+        (a b => a + b) 1 2;
+        """
+        stmts = parser.parse(input_)
+
+        self.assertEqual(3, stmts[0].eval())

@@ -15,36 +15,12 @@ from typing import (
     Tuple,
     Union,
 )
-from pyparsing import (  # type: ignore
-    Combine,
-    Empty,
-    Forward,
-    Group,
-    Keyword,
-    LineEnd,
-    Literal,
-    NoMatch,
-    ParserElement,
-    ParseResults,
-    Word,
-    alphanums,
-    alphas,
-    nums,
-    dblQuotedString,
-    delimitedList,
-    infixNotation,
-    nums,
-    oneOf,
-    opAssoc,
-    restOfLine,
-    ungroup,
-)
 import operator as op
 from collections import namedtuple
 from functools import reduce
 from pprint import pprint
 
-from .utils import cache, trace
+from lampy.utils import trace
 
 
 _bound_vars = set()
@@ -263,108 +239,8 @@ class AST:
         self.root = root
 
     def eval(self):
-        """
-        I
-        >>> parse("(fn x => x) 1").eval()
-        1
-
-        K combinator
-        >>> parse("(fn x => fn y => x) 1 2").eval()
-        1
-
-        S combinator
-        >>> parse("(fn x => fn y => fn z => x z (y z)) (fn x => fn y => x) (fn x => x) 1").eval()
-        1
-        """
         _reset_bound_vars()
         t = eval_term(self.root)
         while not t.is_norm:
             t = eval_term(t)
         return t
-
-
-@cache
-def arit_BNF(atom: ParserElement) -> ParserElement:
-    e = Forward()
-    LP, RP = map(Literal, "()")
-
-    binexpr = infixNotation(
-        atom,
-        (
-            (oneOf("* /"), 2, opAssoc.LEFT),
-            (oneOf("+ -"), 2, opAssoc.LEFT),
-        ),
-    )
-
-    e <<= LP + e + RP | binexpr | atom
-
-    return e
-
-
-@cache
-def BNF() -> ParserElement:
-    """
-    Our grammar
-    """
-
-    def to_lambda(t):
-        return Lamb(Var(t.arg), t.body.asList()[0])
-
-    def to_application(t):
-        # Left associativity
-        return reduce(Appl, t)
-
-    def to_variable(t) -> Var:
-        return Var(t[0])
-
-    def to_val(t) -> Val:
-        return Val(t[0])
-
-    def to_bin(t) -> BinOp:
-        return BinOp(t[0][1], t[0][0], t[0][2])
-
-    ID = Word(alphas, exact=1)
-    VAL = Word(nums)
-    FN = Literal("fn").suppress()
-    ARROW = Literal("=>").suppress()
-    LP = Literal("(").suppress()
-    RP = Literal(")").suppress()
-
-    comment = Literal("#").suppress() + restOfLine
-
-    term = Forward()
-    appl_ = Forward()
-
-    # abst ::= "fn" ID "=>" term+
-    abst = FN + ID("arg") + ARROW + term[1, ...]("body")
-
-    var = ID | VAL | LP + term + RP
-
-    # Binary expression
-    binexpr = infixNotation(
-        var,
-        (
-            (oneOf("* /"), 2, opAssoc.LEFT),
-            (oneOf("+ -"), 2, opAssoc.LEFT),
-        ),
-    )
-
-    appl_ <<= var + appl_[...]  # applseq("e2")
-    appl = appl_ | NoMatch()  # add no match to create a new rule
-
-    term <<= abst | appl | binexpr | var
-
-    term.ignore(comment)
-    ID.setParseAction(to_variable)
-    VAL.setParseAction(to_val)
-    binexpr.setParseAction(to_bin)
-    abst.setParseAction(to_lambda)
-    appl.setParseAction(to_application)
-
-    term.validate()
-
-    return term
-
-
-def parse(input: str) -> AST:
-    return AST(BNF().parseString(input, True)[0])
