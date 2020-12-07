@@ -31,10 +31,10 @@ def _next_var(v: "Var") -> "Var":
     Return the next letter
 
     >>> _next_var(Var("u", int))
-    v
+    v:int
 
     >>> _next_var(Var("z", int))
-    u
+    u:int
     """
     global _bound_vars
     first = ord("u")
@@ -61,13 +61,17 @@ def _bind(var: "Var"):
 class Type(ABC):
     typ: Any
 
+    def __repr__(self):
+        if self.typ in __builtins__:
+            return f"self.typ.__name__"
+        return repr(self.typ)
+
 
 class TypeUnk(Type):
     typ: None
 
-
-class TypeInt(Type):
-    typ: int
+    def __repr__(self):
+        return "unk"
 
 
 class TypeArrow(Type):
@@ -75,6 +79,9 @@ class TypeArrow(Type):
         self.typ = (a, b)
         self.t1 = a
         self.t2 = b
+
+    def __repr__(self):
+        return f"{self.a} -> {self.b}"
 
 
 class Term(ABC):
@@ -112,6 +119,10 @@ class Term(ABC):
             return False
         return True
 
+    @abstractmethod
+    def bind(self, var, to) -> "Term":
+        "Bind a variable var to `to` if in self. Return self, unmodified if no bind should occurr"
+
 
 class BinOp(Term):
     """
@@ -139,7 +150,7 @@ class BinOp(Term):
 
     def typecheck(self) -> None:
         if not self.a.typ == self.b.typ:
-            raise TypeError(f"Typecheck error {self.a.typ} == {self.b.typ} failed")
+            raise TypeError(f"Typecheck failed at {repr(self)}")
 
     @property
     def opfun(self):
@@ -153,6 +164,11 @@ class BinOp(Term):
     def __repr__(self):
         return f"{self.a} {self.op} {self.b}"
 
+    def bind(self, var, to):
+        self.a = self.a.bind(var, to)
+        self.b = self.b.bind(var, to)
+        return self
+
 
 class Var(Term):
     def __init__(self, name, typ):
@@ -163,11 +179,17 @@ class Var(Term):
         pass
 
     def __repr__(self):
-        return self.name
+        return f"{self.name}:{self.typ.__name__}"
 
     def replace(self, old, new) -> "Term":
         if self.name == old.name:
             return new
+        return self
+
+    def bind(self, var, to):
+        if self.name == var.name:
+            self.bound = to
+            self.typ = to.var.typ
         return self
 
 
@@ -185,13 +207,16 @@ class Val(Term):
     def typecheck(self) -> None:
         pass
 
+    def bind(self, var, to):
+        return self
+
 
 class Lamb(Term):
     body: Term
 
     def __init__(self, var: Var, body: Term):
         self.var = var
-        self.body = body
+        self.body = body.bind(var, self)
         self.typ = TypeArrow(var.typ, body.typ)
         _bind(self.var)
 
@@ -209,6 +234,13 @@ class Lamb(Term):
 
     def typecheck(self) -> None:
         self.body.typecheck()
+
+    def scope(self):
+        return self.body
+
+    def bind(self, var, to):
+        self.body = self.body.bind(var, to)
+        return self
 
 
 class Appl(Term):
@@ -231,9 +263,12 @@ class Appl(Term):
         self.e1.typecheck()
         self.e1.typecheck()
         if not self.e1.typ.t2 == self.e2.typ:
-            raise TypeError(
-                f"Typecheck error: {self.e1.typ.t2} == {self.e2.typ} wont typecheck"
-            )
+            raise TypeError(f"Typecheck failed at {self}")
+
+    def bind(self, var, to):
+        self.e1 = self.e1.bind(var, to)
+        self.e2 = self.e2.bind(var, to)
+        return self
 
 
 def appl(lam: "Lamb", term: Term, i=0):
@@ -241,13 +276,14 @@ def appl(lam: "Lamb", term: Term, i=0):
     >>> appl(Lamb(Var("x", int), Var("x", int)), Val("1", int))
     1
     >>> appl(Lamb(Var("x", int), Lamb( Var("y", int), Appl(Var("x", int), Var("y", int)) )), Val("1", int))
-    (λy.1 y)
+    (λy:int.1 y:int)
 
+    # This should raise type error but here the typechecking would already happen
     >>> appl(Lamb(Var("x", int), Lamb( Var("y", int), Appl(Var("x", int), Var("y", int)) )), Var("y", int))
-    (λz.y z)
+    (λz:int.y:int z:int)
 
     >>> appl(Lamb(Var("x", int), Var("x", int)), Lamb(Var("y", int), Var("y", int)))
-    (λy.y)
+    (λy:int.y:int)
     """
     res = lam.replace(lam.var, term)
     if isinstance(res, Lamb):
@@ -261,7 +297,7 @@ def eval_term(term: Term, i=0, *, _trace=False) -> Term:
     """
     Abstration evaluate to it self
     >>> eval_term(Lamb(Var("x", int), Var("x", int)))
-    (λx.x)
+    (λx:int.x:int)
 
     Value evaluate to it self
     >>> eval_term(Appl(Lamb(Var("x", int), Var("x", int)), Val("1", int)))
@@ -269,7 +305,7 @@ def eval_term(term: Term, i=0, *, _trace=False) -> Term:
 
     Application evalute by CBV
     >>> eval_term(Appl(Lamb(Var("x", int), Var("x", int)), Lamb(Var("y", int), Var("y", int))))
-    (λy.y)
+    (λy:int.y:int)
     """
     trace(f"eval({term})", i, _trace=_trace)
     if isinstance(term, Appl):
@@ -299,7 +335,7 @@ class AST:
         ... ).typecheck()
         Traceback (most recent call last):
             ...
-        TypeError: Typecheck error: <class 'int'> == <class 'str'> wont typecheck
+        TypeError: Typecheck failed at (λx:int.x:int) a:str
 
         >>> AST(
         ...     Appl(Lamb(Var("x", int), Var("x", int)), Var("a", int))
@@ -308,7 +344,7 @@ class AST:
         >>> BinOp("+", Var("x", str), Val("1", int)).typecheck()
         Traceback (most recent call last):
             ...
-        TypeError: Typecheck error <class 'str'> == <class 'int'> failed
+        TypeError: Typecheck failed at x:str + 1
         """
         self.root.typecheck()
 

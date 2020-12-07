@@ -9,7 +9,7 @@ grammar = r"""
 
     ?term : lamb
     ?lamb : "(" args ") =>" term | bin_expr
-    ?args : tvar | args "," ID
+    ?args : tvar | args "," tvar
 
     ?bin_expr : bin_expr plusop numfactor
               | numfactor
@@ -48,11 +48,11 @@ class Transformer(LarkTransformer):
         if isinstance(args, Var):
             # args is a single argument
             return Lamb(args, body)
-        *args, lastarg = [t.value for t in args.children]
-        lamb = Lamb(Var(lastarg), body)
+        *args, lastarg = [t for t in args.children]
+        lamb = Lamb(lastarg, body)
         # fold lambdas
         for arg in reversed(args):
-            lamb = Lamb(Var(arg), lamb)
+            lamb = Lamb(arg, lamb)
         return lamb
 
     def var(self, tree):
@@ -67,7 +67,7 @@ class Transformer(LarkTransformer):
         return Appl(e1, e2)
 
     def tvar(self, tree):
-        return Var(tree[0], tree[1])
+        return Var(tree[0], __builtins__[tree[1].data])
 
     def intval(self, tree):
         return Val(tree[0], int)
@@ -79,5 +79,9 @@ class Transformer(LarkTransformer):
         return AST(tree[0])
 
 
-def parse(input_):
-    return Transformer().transform(lamb_parser.parse(input_)).children
+def parse(input_, typecheck=True):
+    res = Transformer().transform(lamb_parser.parse(input_)).children
+    for c in res:
+        if typecheck:
+            c.typecheck()
+    return res
