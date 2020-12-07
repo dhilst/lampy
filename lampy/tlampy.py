@@ -9,7 +9,7 @@ from typing import (
     Callable,
     TypedDict,
     Generic,
-    TypeVar,
+    TypeVar as t_TypeVar,
     Iterable,
     Sequence,
     Tuple,
@@ -18,7 +18,6 @@ from typing import (
 import operator as op
 from collections import namedtuple
 from functools import reduce
-from pprint import pprint
 
 from lampy.utils import trace
 
@@ -69,9 +68,18 @@ class Type(ABC):
 
 class TypeUnk(Type):
     typ: None
+    __name__ = "unk"  # used in Var.repr
 
     def __repr__(self):
         return "unk"
+
+
+class TypeVar(Type):  # TypeVar already defined
+    def __init__(self, var: str):
+        self.typevar = var
+
+    def __repr__(self):
+        return f"'{self.typevar}"
 
 
 class TypeArrow(Type):
@@ -81,7 +89,21 @@ class TypeArrow(Type):
         self.t2 = b
 
     def __repr__(self):
-        return f"{self.a} -> {self.b}"
+        t1 = (
+            self.t1.__name__
+            if getattr(self.t1, "__name__", None) in __builtins__
+            else self.t1
+        )
+        t2 = (
+            self.t2.__name__
+            if getattr(self.t2, "__name__", None) in __builtins__
+            else self.t2
+        )
+
+        if isinstance(t1, TypeArrow):
+            t1 = f"({t1})"
+
+        return f"{t1} -> {t2}"
 
 
 class Term(ABC):
@@ -179,6 +201,8 @@ class Var(Term):
         pass
 
     def __repr__(self):
+        if isinstance(self.typ, TypeArrow):
+            return f"{self.name}:{self.typ}"
         return f"{self.name}:{self.typ.__name__}"
 
     def replace(self, old, new) -> "Term":
@@ -216,7 +240,8 @@ class Lamb(Term):
 
     def __init__(self, var: Var, body: Term):
         self.var = var
-        self.body = body.bind(var, self)
+        self.body = body
+        self.body = self.body.bind(var, self)
         self.typ = TypeArrow(var.typ, body.typ)
         _bind(self.var)
 
@@ -240,6 +265,7 @@ class Lamb(Term):
 
     def bind(self, var, to):
         self.body = self.body.bind(var, to)
+        self.typ.t2 = self.body.typ  # update return type that may be unknow
         return self
 
 

@@ -1,15 +1,15 @@
 from lark import Lark, Tree
 from lark.visitors import Transformer as LarkTransformer
 
-from lampy.tlampy import Var, Val, Appl, Lamb, BinOp, AST, TypeUnk
+from lampy.tlampy import Var, Val, Appl, Lamb, BinOp, AST, TypeUnk, TypeVar, TypeArrow
 
 grammar = r"""
     module: stmt+
     stmt : term+ ";"
 
     ?term : lamb
-    ?lamb : "(" args ") =>" term | bin_expr
-    ?args : tvar | args "," tvar
+    ?lamb : "(" _args ") =>" term | bin_expr
+    _args : tvar | _args "," tvar
 
     ?bin_expr : bin_expr plusop numfactor
               | numfactor
@@ -23,8 +23,11 @@ grammar = r"""
         | SIGNED_INT -> intval
         | ESCAPED_STRING -> strval
 
-    tvar: | ID ":" type
-    type : "int" -> int | "str" -> str
+    tvar: ID ":" typespec
+    ?typespec : type "->" typespec | type
+    !type : "int" | "str" | typevar
+    typevar : "'" ID | tpar
+    tpar : "(" typespec ")"
 
     ID : /[a-z]/
     !?mulop : "*" | "/"
@@ -42,13 +45,13 @@ grammar = r"""
 lamb_parser = Lark(grammar, start="module", parser="lalr")
 
 
+def _str_to_builtins(s: str):
+    return __builtins__[s]  # type: ignore
+
+
 class Transformer(LarkTransformer):
     def lamb(self, tree):
-        args, body = tree
-        if isinstance(args, Var):
-            # args is a single argument
-            return Lamb(args, body)
-        *args, lastarg = [t for t in args.children]
+        *args, lastarg, body = tree
         lamb = Lamb(lastarg, body)
         # fold lambdas
         for arg in reversed(args):
@@ -56,7 +59,7 @@ class Transformer(LarkTransformer):
         return lamb
 
     def var(self, tree):
-        return Var(tree[0].value, TypeUnk)
+        return Var(tree[0].value, TypeUnk())
 
     def bin_expr(self, tree):
         a, op, b = tree
@@ -66,8 +69,13 @@ class Transformer(LarkTransformer):
         e1, e2 = tree
         return Appl(e1, e2)
 
+    def type(self, tree):
+        if isinstance(tree[0], TypeArrow):
+            return tree[0]
+        return _str_to_builtins(tree[0])
+
     def tvar(self, tree):
-        return Var(tree[0], __builtins__[tree[1].data])
+        return Var(tree[0], tree[1])
 
     def intval(self, tree):
         return Val(tree[0], int)
@@ -77,6 +85,17 @@ class Transformer(LarkTransformer):
 
     def stmt(self, tree):
         return AST(tree[0])
+
+    def typespec(self, tree):
+        return TypeArrow(tree[0], tree[1])
+
+    def typevar(self, tree):
+        if isinstance(tree[0], TypeArrow):
+            return tree[0]
+        return TypeVar(tree[0].data)
+
+    def tpar(self, tree):
+        return self.type(tree)
 
 
 def parse(input_, typecheck=True):

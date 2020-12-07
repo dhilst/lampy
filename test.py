@@ -17,8 +17,8 @@ class Test(unittest.TestCase):
     def test_parse(self):
         print(parser.lamb_parser.parse("f -1;").pretty())
         print(parser.lamb_parser.parse("f - 1;").pretty())
-        print(parser.lamb_parser.parse("(a: int, b: int) => a -1;").pretty())
-        print(parser.lamb_parser.parse("((a: int) => a + 10) 1 - 2;").pretty())
+        print(parser.lamb_parser.parse("(a, b) => a -1;").pretty())
+        print(parser.lamb_parser.parse("((a) => a + 10) 1 - 2;").pretty())
 
         def e(input_, _trace=False):
             return parser.parse(input_)[0].eval(_trace=_trace)
@@ -40,3 +40,31 @@ class Test(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             e("(a: int, b: str) => a + b;")
+
+        self.assertEqual(
+            "int -> int", repr(tparser.parse("(a: int) => a;")[0].root.typ)
+        )
+
+        self.assertEqual(
+            "int -> int -> int",
+            repr(tparser.parse("(a: int, b: int) => a;")[0].root.typ),
+        )
+
+        self.assertEqual(
+            "int -> int -> int -> int -> int",
+            repr(tparser.parse("(a: int, b: int, c: int, d: int) => a;")[0].root.typ),
+        )
+
+        self.assertEqual(
+            "(int -> int) -> int -> int",
+            repr(tparser.parse("(f: int -> int) => f;")[0].root.typ),
+        )
+
+        self.assertEqual(
+            "(int -> (int -> int) -> int) -> (int -> int) -> int",
+            repr(
+                tparser.parse(
+                    "(x: int -> (int -> int) -> int, y: int -> int, z: int) => x z (y z);"
+                )[0].root.typ
+            ),
+        )
