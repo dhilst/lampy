@@ -30,6 +30,6 @@ def cache(f):
     return _
 
 
-def trace(msg: str, i=0):
-    if os.getenv("LAMPY_TRACE", False):
+def trace(msg: str, i=0, *, _trace=False):
+    if _trace:
         print(f"{'  ' * i}{msg}", file=sys.stderr)

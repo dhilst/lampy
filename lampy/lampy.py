@@ -205,7 +205,7 @@ def appl(lam: "Lamb", term: Term, i=0):
     raise TypeError(f"{res} is not a lambda")
 
 
-def eval_term(term: Term, i=0) -> Term:
+def eval_term(term: Term, i=0, *, _trace=False) -> Term:
     """
     Abstration evaluate to it self
     >>> eval_term(Lamb(Var("x"), Var("x")))
@@ -219,15 +219,16 @@ def eval_term(term: Term, i=0) -> Term:
     >>> eval_term(Appl(Lamb(Var("x"), Var("x")), Lamb(Var("y"), Var("y"))))
     (λy.y)
     """
-    trace(f"eval({term})", i)
+    trace(f"eval({term})", i, _trace=_trace)
     if isinstance(term, Appl):
-        e1 = eval_term(term.e1, i + 1)
-        e2 = eval_term(term.e2, i + 1)
+        e1 = eval_term(term.e1, i + 1, _trace=_trace)
+        e2 = eval_term(term.e2, i + 1, _trace=_trace)
         if isinstance(e1, Lamb):
-            return appl(e1, e2, i + 1)
+            return eval_term(appl(e1, e2, i + 1), i + 1, _trace=_trace)
     elif isinstance(term, BinOp):
-        a = eval_term(term.a, i + 1)
-        b = eval_term(term.b, i + 1)
+        a = eval_term(term.a, i + 1, _trace=_trace)
+        b = eval_term(term.b, i + 1, _trace=_trace)
+
         if isinstance(a, Val) and isinstance(b, Val):
             return Val(term.opfun(a.val, b.val))
 
@@ -238,13 +239,13 @@ class AST:
     def __init__(self, root: Term):
         self.root = root
 
-    def eval(self):
+    def eval(self, _trace=False):
         _reset_bound_vars()
-        t = eval_term(self.root)
+        t = eval_term(self.root, _trace=_trace)
         prev = None
         while not t.is_norm:
             prev = t
-            t = eval_term(t)
+            t = eval_term(t, _trace=_trace)
             if prev == t:
                 break
         return t

@@ -17,13 +17,14 @@ class Test(unittest.TestCase):
         print(parser.lamb_parser.parse("f -1;").pretty())
         print(parser.lamb_parser.parse("f - 1;").pretty())
         print(parser.lamb_parser.parse("(a, b) => a -1;").pretty())
+        print(parser.lamb_parser.parse("((a) => a + 10) 1 - 2;").pretty())
 
-        def e(input_):
-            return parser.parse(input_)[0].eval()
+        def e(input_, _trace=False):
+            return parser.parse(input_)[0].eval(_trace=_trace)
 
         self.assertEqual(3, e("((a, b) => a + b) 1 2;").val)
         self.assertEqual(2, e("((a, b) => a + b) 1 1;").val)
         self.assertEqual(1, e("((a, b) => a) 1 2;").val)
         self.assertEqual(-1, e("0 + -1;").val)
         self.assertEqual(0, e("((a) => a + 1) -1;").val)
-        self.assertEqual(9, e("((a) => a + 10) 1 - 2;"))
+        self.assertEqual(9, e("((a) => a + 10) 1 - 2;").val)
