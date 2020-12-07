@@ -1,0 +1,324 @@
+import os
+import sys
+from abc import ABC, abstractmethod
+from typing import (
+    Dict,
+    Any,
+    NamedTuple,
+    Optional,
+    Callable,
+    TypedDict,
+    Generic,
+    TypeVar,
+    Iterable,
+    Sequence,
+    Tuple,
+    Union,
+)
+import operator as op
+from collections import namedtuple
+from functools import reduce
+from pprint import pprint
+
+from lampy.utils import trace
+
+
+_bound_vars = set()
+
+
+def _next_var(v: "Var") -> "Var":
+    """
+    Return the next letter
+
+    >>> _next_var(Var("u", int))
+    v
+
+    >>> _next_var(Var("z", int))
+    u
+    """
+    global _bound_vars
+    first = ord("u")
+    last = ord("z")
+    index = ord(v.name)
+    while True:
+        next_ = ord(v.name) + 1
+        if next_ > last:
+            next_ = first
+        found = Var(chr(next_), v.typ)
+        if found not in _bound_vars:
+            return Var(chr(next_), v.typ)
+
+
+def _reset_bound_vars():
+    global _bound_vars
+    _bound_vars = set()
+
+
+def _bind(var: "Var"):
+    _bound_vars.add(var.name)
+
+
+class Type(ABC):
+    typ: Any
+
+
+class TypeUnk(Type):
+    typ: None
+
+
+class TypeInt(Type):
+    typ: int
+
+
+class TypeArrow(Type):
+    def __init__(self, a: Type, b: Type):
+        self.typ = (a, b)
+        self.t1 = a
+        self.t2 = b
+
+
+class Term(ABC):
+    typ: Any
+
+    @abstractmethod
+    def replace(self, old, new) -> "Term":
+        pass
+
+    @abstractmethod
+    def typecheck(self) -> None:
+        "Raises Type error"
+        pass
+
+    @property
+    def is_norm(self) -> bool:
+        """
+        Is in beta-normal form?
+
+        >>> Lamb(Var("x", int), Var("x", int)).is_norm
+        True
+        >>> Var("x", int).is_norm
+        True
+        >>> Val("1", int).is_norm
+        True
+        >>> Appl(Lamb(Var("x", int), Var("x", int)), Val("1", int)).is_norm
+        False
+        """
+        if isinstance(self, Appl):
+            if isinstance(self.e1, Lamb):
+                return False
+            else:
+                return self.e1.is_norm and self.e2.is_norm
+        elif isinstance(self, BinOp):
+            return False
+        return True
+
+
+class BinOp(Term):
+    """
+    >>> eval_term(BinOp("+", Val("1", int), Val("1", int)))
+    2
+
+    >>> AST(Appl(Lamb(Var("x", int), BinOp("+", Var("x", int), Val("1", int))), Val("2", int))).eval()
+    3
+    """
+
+    opmap = {
+        "+": op.add,
+        "*": op.mul,
+        "/": op.truediv,
+        "-": op.sub,
+    }
+
+    def __init__(self, op: str, a: Term, b: Term):
+        self.a = a
+        self.op = op
+        self.b = b
+        self.typ = a.typ
+        if op not in self.__class__.opmap:
+            raise TypeError(f"Unknown operator {op}")
+
+    def typecheck(self) -> None:
+        if not self.a.typ == self.b.typ:
+            raise TypeError(f"Typecheck error {self.a.typ} == {self.b.typ} failed")
+
+    @property
+    def opfun(self):
+        return self.__class__.opmap[self.op]
+
+    def replace(self, old, new):
+        self.a = self.a.replace(old, new)
+        self.b = self.b.replace(old, new)
+        return self
+
+    def __repr__(self):
+        return f"{self.a} {self.op} {self.b}"
+
+
+class Var(Term):
+    def __init__(self, name, typ):
+        self.name = name
+        self.typ = typ
+
+    def typecheck(self) -> None:
+        pass
+
+    def __repr__(self):
+        return self.name
+
+    def replace(self, old, new) -> "Term":
+        if self.name == old.name:
+            return new
+        return self
+
+
+class Val(Term):
+    def __init__(self, val, typ):
+        self.val = typ(val)
+        self.typ = typ
+
+    def __repr__(self):
+        return str(self.val)
+
+    def replace(self, old, new) -> "Term":
+        return self
+
+    def typecheck(self) -> None:
+        pass
+
+
+class Lamb(Term):
+    body: Term
+
+    def __init__(self, var: Var, body: Term):
+        self.var = var
+        self.body = body
+        self.typ = TypeArrow(var.typ, body.typ)
+        _bind(self.var)
+
+    def replace(self, old: Var, new: Term) -> "Term":
+        if isinstance(new, Var) and new.name == self.var.name:
+            # alpha conversion
+            old_var = self.var
+            self.var = _next_var(self.var)
+            self.body = self.body.replace(old_var, self.var)
+        self.body = self.body.replace(old, new)
+        return self
+
+    def __repr__(self):
+        return f"(λ{self.var}.{self.body})"
+
+    def typecheck(self) -> None:
+        self.body.typecheck()
+
+
+class Appl(Term):
+    def __init__(self, e1, e2):
+        self.e1 = e1
+        self.e2 = e2
+        self.typ = e2.typ
+
+    def replace(self, old, new):
+        self.e1 = self.e1.replace(old, new)
+        self.e2 = self.e2.replace(old, new)
+        return self
+
+    def __repr__(self):
+        if isinstance(self.e2, Appl):
+            return f"{self.e1} ({self.e2})"
+        return f"{self.e1} {self.e2}"
+
+    def typecheck(self) -> None:
+        self.e1.typecheck()
+        self.e1.typecheck()
+        if not self.e1.typ.t2 == self.e2.typ:
+            raise TypeError(
+                f"Typecheck error: {self.e1.typ.t2} == {self.e2.typ} wont typecheck"
+            )
+
+
+def appl(lam: "Lamb", term: Term, i=0):
+    """
+    >>> appl(Lamb(Var("x", int), Var("x", int)), Val("1", int))
+    1
+    >>> appl(Lamb(Var("x", int), Lamb( Var("y", int), Appl(Var("x", int), Var("y", int)) )), Val("1", int))
+    (λy.1 y)
+
+    >>> appl(Lamb(Var("x", int), Lamb( Var("y", int), Appl(Var("x", int), Var("y", int)) )), Var("y", int))
+    (λz.y z)
+
+    >>> appl(Lamb(Var("x", int), Var("x", int)), Lamb(Var("y", int), Var("y", int)))
+    (λy.y)
+    """
+    res = lam.replace(lam.var, term)
+    if isinstance(res, Lamb):
+        trace(f"appl({lam}, {term}) => {res.body}", i)
+        return res.body
+
+    raise TypeError(f"{res} is not a lambda")
+
+
+def eval_term(term: Term, i=0, *, _trace=False) -> Term:
+    """
+    Abstration evaluate to it self
+    >>> eval_term(Lamb(Var("x", int), Var("x", int)))
+    (λx.x)
+
+    Value evaluate to it self
+    >>> eval_term(Appl(Lamb(Var("x", int), Var("x", int)), Val("1", int)))
+    1
+
+    Application evalute by CBV
+    >>> eval_term(Appl(Lamb(Var("x", int), Var("x", int)), Lamb(Var("y", int), Var("y", int))))
+    (λy.y)
+    """
+    trace(f"eval({term})", i, _trace=_trace)
+    if isinstance(term, Appl):
+        e1 = eval_term(term.e1, i + 1, _trace=_trace)
+        e2 = eval_term(term.e2, i + 1, _trace=_trace)
+        if isinstance(e1, Lamb):
+            return eval_term(appl(e1, e2, i + 1), i + 1, _trace=_trace)
+    elif isinstance(term, BinOp):
+        a = eval_term(term.a, i + 1, _trace=_trace)
+        b = eval_term(term.b, i + 1, _trace=_trace)
+
+        if isinstance(a, Val) and isinstance(b, Val):
+            res = term.opfun(a.val, b.val)
+            return Val(res, type(res))
+
+    return term
+
+
+class AST:
+    def __init__(self, root: Term):
+        self.root = root
+
+    def typecheck(self) -> None:
+        """
+        >>> AST(
+        ...     Appl(Lamb(Var("x", int), Var("x", int)), Var("a", str))
+        ... ).typecheck()
+        Traceback (most recent call last):
+            ...
+        TypeError: Typecheck error: <class 'int'> == <class 'str'> wont typecheck
+
+        >>> AST(
+        ...     Appl(Lamb(Var("x", int), Var("x", int)), Var("a", int))
+        ... ).typecheck()
+
+        >>> BinOp("+", Var("x", str), Val("1", int)).typecheck()
+        Traceback (most recent call last):
+            ...
+        TypeError: Typecheck error <class 'str'> == <class 'int'> failed
+        """
+        self.root.typecheck()
+
+    def eval(self, _trace=False):
+        _reset_bound_vars()
+        t = eval_term(self.root, _trace=_trace)
+        prev = None
+        while not t.is_norm:
+            prev = t
+            t = eval_term(t, _trace=_trace)
+            if prev == t:
+                break
+        return t
