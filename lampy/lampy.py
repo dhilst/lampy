@@ -241,6 +241,10 @@ class AST:
     def eval(self):
         _reset_bound_vars()
         t = eval_term(self.root)
+        prev = None
         while not t.is_norm:
+            prev = t
             t = eval_term(t)
+            if prev == t:
+                break
         return t

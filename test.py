@@ -14,31 +14,16 @@ def load_tests(loader, tests, ignore):
 
 class Test(unittest.TestCase):
     def test_parse(self):
-        return
-        print(
-            parser.lamb_parser.parse(
-                """
-            (a);
-            (a b);
-            a b c d;
+        print(parser.lamb_parser.parse("f -1;").pretty())
+        print(parser.lamb_parser.parse("f - 1;").pretty())
+        print(parser.lamb_parser.parse("(a, b) => a -1;").pretty())
 
-            (x y => x) 1 2;
-            x => x;
-            x y z => x z (y z);
+        def e(input_):
+            return parser.parse(input_)[0].eval()
 
-            a b => a + b;
-            a b => a + b * a;
-            a b => a * b + a;
-
-            a b c => a b + c;
-            a b c => a (b + c);
-        """
-            ).pretty()
-        )
-
-        input_ = """
-        (a b => a + b) 1 2;
-        """
-        stmts = parser.parse(input_)
-
-        self.assertEqual(3, stmts[0].eval())
+        self.assertEqual(3, e("((a, b) => a + b) 1 2;").val)
+        self.assertEqual(2, e("((a, b) => a + b) 1 1;").val)
+        self.assertEqual(1, e("((a, b) => a) 1 2;").val)
+        self.assertEqual(-1, e("0 + -1;").val)
+        self.assertEqual(0, e("((a) => a + 1) -1;").val)
+        self.assertEqual(9, e("((a) => a + 10) 1 - 2;"))

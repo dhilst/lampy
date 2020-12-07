@@ -1,4 +1,4 @@
-from lark import Lark
+from lark import Lark, Tree
 from lark.visitors import Transformer as LarkTransformer
 
 from lampy.lampy import Var, Val, Appl, Lamb, BinOp, AST
@@ -8,40 +8,46 @@ grammar = r"""
     stmt : term+ ";"
 
     ?term : lamb
-    ?lamb : ID+ "=>" term | bin_expr
+    ?lamb : "(" args ") =>" term | bin_expr
+    ?args : ID | args "," ID
 
     ?bin_expr : bin_expr plusop numfactor
-             | numfactor
+              | numfactor
     ?numfactor: numfactor mulop appl
-             | appl
+              | appl
 
-    ?appl : appl val | val
+    ?appl : appl atom | atom
 
-    ?val : "(" term ")"
-         | ID -> var
-         | SIGNED_NUMBER -> val
+    ?atom: "(" term ")"
+        | ID -> var
+        | SIGNED_NUMBER -> val
 
     ID : /[a-z]/
+    SIGNED_NUMBER: /(\+|-)?\d+(\.\d+)?/
     !?mulop : "*" | "/"
     !?plusop: "+" | "-"
 
-    %import common.SIGNED_NUMBER
     %import common.WS
     %import common.SH_COMMENT
     %ignore WS
     %ignore SH_COMMENT
+
 """
 
-lamb_parser = Lark(grammar, start="module")
+lamb_parser = Lark(grammar, start="module", parser="lalr")
 
 
 class Transformer(LarkTransformer):
     def lamb(self, tree):
-        *args, lastarg, body = tree
-        lamb = Lamb(Var(lastarg.value), body)
+        args, body = tree
+        if not isinstance(args, Tree):
+            # args is a single argument
+            return Lamb(Var(args), body)
+        *args, lastarg = [t.value for t in args.children]
+        lamb = Lamb(Var(lastarg), body)
         # fold lambdas
         for arg in reversed(args):
-            lamb = Lamb(Var(arg.value), lamb)
+            lamb = Lamb(Var(arg), lamb)
         return lamb
 
     def bin_expr(self, tree):
