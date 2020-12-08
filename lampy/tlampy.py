@@ -88,9 +88,14 @@ class TypeArrow(Type):
         self.t1 = a
         self.t2 = b
 
-
     def __eq__(self, other):
         return self.t1 == other.t1 and self.t2 == other.t2
+
+    def __sub__(self, other):
+        if self.t1 == other:
+            return self.t2
+        raise TypeError(f"Can't sub {self} - {other}")
+
     def __repr__(self):
         t1 = (
             self.t1.__name__
@@ -276,7 +281,10 @@ class Appl(Term):
     def __init__(self, e1, e2):
         self.e1 = e1
         self.e2 = e2
-        self.typ = e2.typ
+        if isinstance(e1.typ, TypeArrow):
+            self.typ = e1.typ - e2.typ
+        else:
+            self.typ = e2.typ
 
     def replace(self, old, new):
         self.e1 = self.e1.replace(old, new)
@@ -291,30 +299,23 @@ class Appl(Term):
     def typecheck(self) -> None:
         self.e1.typecheck()
         self.e1.typecheck()
-        if not self.e1.typ.t1 == self.e2.typ:
-            raise TypeError(f"Typecheck failed at {self}")
+        try:
+            if not self.e1.typ.t1 == self.e2.typ:
+                raise TypeError(f"Typecheck failed at {self}")
+        except AttributeError:
+            __import__("pdb").set_trace()
 
     def bind(self, var, to):
         self.e1 = self.e1.bind(var, to)
         self.e2 = self.e2.bind(var, to)
-        self.typ = self.e2.typ
+        if isinstance(self.e1.typ, TypeArrow):
+            self.typ = self.e1.typ - self.e2.typ
+        else:
+            self.typ = self.e2.typ
         return self
 
 
 def appl(lam: "Lamb", term: Term, i=0):
-    """
-    >>> appl(Lamb(Var("x", int), Var("x", int)), Val("1", int))
-    1
-    >>> appl(Lamb(Var("x", int), Lamb( Var("y", int), Appl(Var("x", int), Var("y", int)) )), Val("1", int))
-    (λy:int.1 y:int)
-
-    # This should raise type error but here the typechecking would already happen
-    >>> appl(Lamb(Var("x", int), Lamb( Var("y", int), Appl(Var("x", int), Var("y", int)) )), Var("y", int))
-    (λz:int.y:int z:int)
-
-    >>> appl(Lamb(Var("x", int), Var("x", int)), Lamb(Var("y", int), Var("y", int)))
-    (λy:int.y:int)
-    """
     res = lam.replace(lam.var, term)
     if isinstance(res, Lamb):
         trace(f"appl({lam}, {term}) => {res.body}", i)
@@ -324,19 +325,6 @@ def appl(lam: "Lamb", term: Term, i=0):
 
 
 def eval_term(term: Term, i=0, *, _trace=False) -> Term:
-    """
-    Abstration evaluate to it self
-    >>> eval_term(Lamb(Var("x", int), Var("x", int)))
-    (λx:int.x:int)
-
-    Value evaluate to it self
-    >>> eval_term(Appl(Lamb(Var("x", int), Var("x", int)), Val("1", int)))
-    1
-
-    Application evalute by CBV
-    >>> eval_term(Appl(Lamb(Var("x", int), Var("x", int)), Lamb(Var("y", int), Var("y", int))))
-    (λy:int.y:int)
-    """
     trace(f"eval({term})", i, _trace=_trace)
     if isinstance(term, Appl):
         e1 = eval_term(term.e1, i + 1, _trace=_trace)
@@ -359,23 +347,6 @@ class AST:
         self.root = root
 
     def typecheck(self) -> None:
-        """
-        >>> AST(
-        ...     Appl(Lamb(Var("x", int), Var("x", int)), Var("a", str))
-        ... ).typecheck()
-        Traceback (most recent call last):
-            ...
-        TypeError: Typecheck failed at (λx:int.x:int) a:str
-
-        >>> AST(
-        ...     Appl(Lamb(Var("x", int), Var("x", int)), Var("a", int))
-        ... ).typecheck()
-
-        >>> BinOp("+", Var("x", str), Val("1", int)).typecheck()
-        Traceback (most recent call last):
-            ...
-        TypeError: Typecheck failed at x:str + 1
-        """
         self.root.typecheck()
 
     def eval(self, _trace=False):
