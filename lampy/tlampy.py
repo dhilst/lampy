@@ -302,11 +302,8 @@ class Appl(Term):
     def typecheck(self) -> None:
         self.e1.typecheck()
         self.e1.typecheck()
-        try:
-            if not self.e1.typ.t1 == self.e2.typ:
-                raise TypeError(f"Typecheck failed at {self}")
-        except AttributeError:
-            __import__("pdb").set_trace()
+        if not self.e1.typ.t1 == self.e2.typ:
+            raise TypeError(f"Typecheck failed at {self}")
 
     def bind(self, var, to):
         self.e1 = self.e1.bind(var, to)

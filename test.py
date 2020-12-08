@@ -34,6 +34,9 @@ class Test(unittest.TestCase):
         def e(input_, _trace=False):
             return tparser.parse(input_)[0].eval(_trace=_trace)
 
+        def p(input_):
+            return tparser.parse(input_)[0].root
+
         self.assertEqual(3, e("((a: int) => 1 + a) 2;").val)
 
         with self.assertRaises(TypeError):
@@ -94,3 +97,7 @@ class Test(unittest.TestCase):
                 )[0].root.typ
             ),
         )
+
+
+        a = p("(x: 'a) => x;").typ
+        __import__('pdb').set_trace()

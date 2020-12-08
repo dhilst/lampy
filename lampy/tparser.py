@@ -70,9 +70,9 @@ class Transformer(LarkTransformer):
         return Appl(e1, e2)
 
     def type(self, tree):
-        if isinstance(tree[0], TypeArrow):
-            return tree[0]
-        return _str_to_builtins(tree[0])
+        if isinstance(tree[0], str):
+            return _str_to_builtins(tree[0])
+        return tree[0]
 
     def tvar(self, tree):
         return Var(tree[0], tree[1])
@@ -90,9 +90,11 @@ class Transformer(LarkTransformer):
         return TypeArrow(tree[0], tree[1])
 
     def typevar(self, tree):
+        # typevar may be called after typespec
+        # in this case just return
         if isinstance(tree[0], TypeArrow):
             return tree[0]
-        return TypeVar(tree[0].data)
+        return TypeVar(tree[0].value)
 
     def tpar(self, tree):
         return self.type(tree)
