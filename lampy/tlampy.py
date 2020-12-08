@@ -94,7 +94,10 @@ class TypeArrow(Type):
     def __sub__(self, other):
         if self.t1 == other:
             return self.t2
-        raise TypeError(f"Can't sub {self} - {other}")
+        # If this condition doen't match we will surelly
+        # have an type error during typechecking. But method
+        # this is called while parsing while type error is
+        # expected to happen only in typechecking time (after parsing).
 
     def __repr__(self):
         t1 = (
