@@ -88,6 +88,9 @@ class TypeArrow(Type):
         self.t1 = a
         self.t2 = b
 
+
+    def __eq__(self, other):
+        return self.t1 == other.t1 and self.t2 == other.t2
     def __repr__(self):
         t1 = (
             self.t1.__name__
@@ -288,12 +291,13 @@ class Appl(Term):
     def typecheck(self) -> None:
         self.e1.typecheck()
         self.e1.typecheck()
-        if not self.e1.typ.t2 == self.e2.typ:
+        if not self.e1.typ.t1 == self.e2.typ:
             raise TypeError(f"Typecheck failed at {self}")
 
     def bind(self, var, to):
         self.e1 = self.e1.bind(var, to)
         self.e2 = self.e2.bind(var, to)
+        self.typ = self.e2.typ
         return self
 
 

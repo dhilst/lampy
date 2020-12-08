@@ -35,6 +35,7 @@ class Test(unittest.TestCase):
             return tparser.parse(input_)[0].eval(_trace=_trace)
 
         self.assertEqual(3, e("((a: int) => 1 + a) 2;").val)
+
         with self.assertRaises(TypeError):
             e('((a: int) => 1 + a) "2";')
 
@@ -65,6 +66,17 @@ class Test(unittest.TestCase):
             repr(e("((a: int, b: int) => a) 1;").typ),
         )
 
+        self.assertEqual(
+            "<class 'int'>",
+            repr(tparser.parse("((f: int -> int, a: int) => f(a)) ((i:int) => i) 0;")[0].root.typ)
+        )
+
+        self.assertEqual(
+            0,
+            e("((f: int -> int, a: int) => f(a)) ((i:int) => i) 0;").val
+        )
+
+        self.assertEqual(1, e("((a: int -> int, b: int) => a b) ((i: int) => i) 1;").val)
         #self.assertEqual(
         #    "(int -> int -> int) -> (int -> int) -> int",
         #    repr(
@@ -73,3 +85,4 @@ class Test(unittest.TestCase):
         #        )[0].root.typ
         #    ),
         #)
+
