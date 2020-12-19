@@ -53,7 +53,7 @@ class TArrow(TTerm):
         return isinstance(other, TArrow) and self.t1 == other.t1 and self.t2 == other.t2
 
     def __hash__(self):
-        return hash(self.t1) // hash(self.t2)
+        return hash(self.t1) + hash(self.t2)
 
 
 class TPoly(TTerm):
@@ -326,7 +326,6 @@ class SemantVisitor(LAVisitor):
 
 
 def unify(constr: Dict[Any, Any]) -> Optional[Subst]:
-    print("unify2", constr)
     if not constr:
         return {}
     k, v = constr.popitem()
@@ -387,7 +386,13 @@ def infer_type(env: TypeEnv, term: LTerm) -> TTerm:
             raise TypeError
         term.e1.typ = at
         term.e2.typ = at.t1
-        if isinstance(term.e1, LVar):
+        if (
+            isinstance(term.e1, LVar)
+            # This is a shamefull workaround to
+            # get types printed right
+            and hasattr(term.e1, "name")
+            and hasattr(env[term.e1.name], "lamb")
+        ):
             env[term.e1.name].lamb.var.typ = at  # type: ignore
         term.typ = at.t2
         return cast(TTerm, term.typ)
@@ -421,6 +426,9 @@ def lamb_parse(input_: str) -> LTerm:
 
 # print(lamb_parse("(λx.λy.x) u v"))
 # print(lamb_parse("(λx.x) u"))
-# print(lamb_parse("let id = (λx.x) in id a"))
 # print(lamb_parse("(λx.x a)(λy.y)"))
 print(lamb_parse("(λx.x)"))
+print(lamb_parse("(λx.y)"))
+print(lamb_parse("(λx.λy.x)"))
+print(lamb_parse("(λx.λy.x) a b"))
+print(lamb_parse("let id = (λx.x) in id a"))
