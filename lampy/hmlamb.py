@@ -49,6 +49,12 @@ class TArrow(TTerm):
             return f"({self.t1}) -> {self.t2}"
         return f"{self.t1} -> {self.t2}"
 
+    def __eq__(self, other):
+        return isinstance(other, TArrow) and self.t1 == other.t1 and self.t2 == other.t2
+
+    def __hash__(self):
+        return hash(self.t1) // hash(self.t2)
+
 
 class TPoly(TTerm):
     def __init__(self, name):
@@ -59,6 +65,9 @@ class TPoly(TTerm):
 
     def __eq__(self, other):
         return other.__class__ is self.__class__ and self.name == other.name
+
+    def __hash__(self):
+        return hash(self.name)
 
     def __repr__(self):
         return f"'{self.name}"
@@ -73,6 +82,9 @@ class TMono(TTerm):
 
     def __eq__(self, other):
         return other.__class__ is self.__class__ and self.val == other.val
+
+    def __hash__(self):
+        return hash(self.name)
 
     def __repr__(self):
         return self.val
@@ -90,43 +102,43 @@ class TUnification:
         return f"unify({self.t1}, {self.t2})"
 
 
-def unify(x: TTerm, y: TTerm, subst: Optional[Subst]) -> Optional[Subst]:
+def __unify(x: TTerm, y: TTerm, subst: Optional[Subst]) -> Optional[Subst]:
     # print(f"unify({x}, {y}, {subst})")
     if subst is None:
         return None
     elif x.unify_eq(y):
         return subst
     elif isinstance(x, TPoly):
-        return unify_var(x, y, subst)
+        return __unify_var(x, y, subst)
     elif isinstance(y, TPoly):
-        return unify_var(y, x, subst)
+        return __unify_var(y, x, subst)
     elif isinstance(x, TArrow) and isinstance(y, TArrow):
-        subst = unify(x.t1, y.t1, subst)
-        subst = unify(x.t2, y.t2, subst)
+        subst = __unify(x.t1, y.t1, subst)
+        subst = __unify(x.t2, y.t2, subst)
         return subst
     else:
         return None
 
 
-def unify_var(v: TPoly, x: TTerm, subst: Subst) -> Optional[Subst]:
+def __unify_var(v: TPoly, x: TTerm, subst: Subst) -> Optional[Subst]:
     # print(f"unify_var({v}, {x}, {subst})")
     if v.name in subst:
-        return unify(subst[v.name], x, subst)
+        return __unify(subst[v.name], x, subst)
     elif isinstance(x, TPoly) and x.name in subst:
-        return unify(v, subst[x.name], subst)
-    elif occurs_check(v, x, subst):
+        return __unify(v, subst[x.name], subst)
+    elif __occurs_check(v, x, subst):
         return None
     else:
         return {**subst, v.name: x}
 
 
-def occurs_check(v: TPoly, term: TTerm, subst: Subst) -> bool:
+def __occurs_check(v: TPoly, term: TTerm, subst: Subst) -> bool:
     if v == term:
         return True
     elif isinstance(term, TPoly) and term.name in subst:
-        return occurs_check(v, subst[term.name], subst)
+        return __occurs_check(v, subst[term.name], subst)
     elif isinstance(term, TArrow):
-        return occurs_check(v, term.t1, subst) or occurs_check(v, term.t2, subst)
+        return __occurs_check(v, term.t1, subst) or __occurs_check(v, term.t2, subst)
     else:
         return False
 
@@ -213,7 +225,7 @@ class LVar(LTerm):
         self.typ = typ
 
     def __repr__(self):
-        return f"{self.name}:{self.typ}"
+        return f"{self.name}"
 
     def accept(self, visitor: LAVisitor):
         visitor.var(self)
@@ -246,7 +258,7 @@ class LLamb(LTerm):
         self.typ = typ
 
     def __repr__(self):
-        return f"(λ{self.var}.{self.body}):{self.typ}"
+        return f"(λ{self.var}:{self.var.typ}.{self.body}):{self.typ}"
 
     def accept(self, visitor):
         visitor.lamb(self)
@@ -261,7 +273,7 @@ class LAppl(LTerm):
         self.typ: Optional[Union[TPoly, TMono]] = None
 
     def __repr__(self):
-        return f"({self.e1} {self.e2}):{self.typ}"
+        return f"({self.e1} {self.e2})"
 
     def accept(self, visitor):
         visitor.appl(self)
@@ -313,6 +325,49 @@ class SemantVisitor(LAVisitor):
         return let
 
 
+def unify(constr: Dict[Any, Any]) -> Optional[Subst]:
+    print("unify2", constr)
+    if not constr:
+        return {}
+    k, v = constr.popitem()
+    if k == v:
+        return unify(constr)
+    elif isinstance(k, TPoly):
+        if ocurrs(k, v):
+            return None
+        return unify(constr)
+    elif isinstance(v, TPoly):
+        if ocurrs(v, k):
+            return None
+        return unify(constr)
+    elif isinstance(k, TArrow) and isinstance(v, TArrow):
+        constr[k.t1] = v.t1
+        constr[k.t2] = v.t2
+        return unify(constr)
+    else:
+        return None
+
+
+def ocurrs(needle, haystack) -> bool:
+    if needle == haystack:
+        return True
+    elif isinstance(haystack, TArrow):
+        if ocurrs(needle, haystack.t1):
+            return True
+        elif ocurrs(needle, haystack.t2):
+            return True
+        else:
+            return False
+    else:
+        return False
+
+
+def substitute2(s: Dict[Any, Any], constr: Dict[Any, Any]):
+    for sk, sv in s.items():
+        constr[sk] = sv
+    return constr
+
+
 def infer_type(env: TypeEnv, term: LTerm) -> TTerm:
     "Type inference Algorithm J"
     if isinstance(term, LVar):
@@ -324,19 +379,23 @@ def infer_type(env: TypeEnv, term: LTerm) -> TTerm:
                 env[term.name] = term.typ
         return cast(TTerm, term.typ)
     elif isinstance(term, LAppl):
-        a = cast(TArrow, infer_type(env, term.e1))
+        a = infer_type(env, term.e1)
         b = infer_type(env, term.e2)
-        s = unify(a, b, {})
+        at = TArrow(b, TPoly(newvar()))
+        s = unify({a: at})
         if s is None:
             raise TypeError
-        term.e1.typ = a
-        term.e2.typ = b
-        __import__("pdb").set_trace()
-        term.typ = a.t2
+        term.e1.typ = at
+        term.e2.typ = at.t1
+        if isinstance(term.e1, LVar):
+            env[term.e1.name].lamb.var.typ = at  # type: ignore
+        term.typ = at.t2
         return cast(TTerm, term.typ)
     elif isinstance(term, LLamb):
         term.var.typ = TPoly(newvar())
         env[term.var.name] = term.var.typ
+        # workarrow to fix lambda var after refinement
+        env[term.var.name].lamb = term  # type: ignore
         term.body.typ = infer_type(env, term.body)
         term.typ = TArrow(term.var.typ, term.body.typ)
         return term.typ
@@ -363,4 +422,5 @@ def lamb_parse(input_: str) -> LTerm:
 # print(lamb_parse("(λx.λy.x) u v"))
 # print(lamb_parse("(λx.x) u"))
 # print(lamb_parse("let id = (λx.x) in id a"))
-print(lamb_parse("(λx.x a)(λy.y)"))
+# print(lamb_parse("(λx.x a)(λy.y)"))
+print(lamb_parse("(λx.x)"))

@@ -30,6 +30,10 @@ class Test(unittest.TestCase):
         self.assertEqual(0, e("((a) => a + 1) -1;").val)
         self.assertEqual(9, e("((a) => a + 10) 1 - 2;").val)
 
+        # print(e("((f) => ((x) => f (x x))((x) => f (x x))) 1;"))
+
+        (lambda f : ( lambda x : f(x(x)) )( lambda x : f(x(x)) ))(lambda x : x)
+
     def test_tparser(self):
         def e(input_, _trace=False):
             return tparser.parse(input_)[0].eval(_trace=_trace)
@@ -99,5 +103,4 @@ class Test(unittest.TestCase):
         )
 
 
-        a = p("(x: 'a) => x;").typ
-        __import__('pdb').set_trace()
+
