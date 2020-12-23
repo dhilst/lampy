@@ -107,7 +107,7 @@ def _seq(*patterns):
 def _let(string):
     print("_let", string)
     string = string.strip()
-    res = _seq("let", "\w+")(string)
+    res = _seq(r"let(rec)?", "\w+")(string)
     if res is not None:
         print("found let <id>")
         res, string = res
@@ -126,7 +126,8 @@ def _let(string):
                     letres = _let(string)
                     if letres is not None:
                         letres, string = letres
-                        return ("let", id_, "=", leteq, "in", letres), string
+                        __import__("ipdb").set_trace()
+                        return (res[0].group(0), id_, "=", leteq, "in", letres), string
 
         in_ = re.search("in", string)
         if in_ is not None:
@@ -136,7 +137,7 @@ def _let(string):
             if letres is not None:
                 letres, string = letres
                 print("found let", letres)
-                return ("let", id_, "in", letres), string
+                return (res[0].group(0), id_, "in", letres), string
 
     else:
         res = not_in(string)
@@ -156,7 +157,10 @@ def not_in(string):
 
 print(
     list(
-        regex_iter("let a = 1 in let b = 2 in let f = let x in x + 1 in f(a + b)", _let)
+        regex_iter(
+            "let a = 1 in let b = 2 in let f = let x in x + 1 in letrec frec = let x in 1 if x == 0 else x * frec(x-1) in frec(5)",
+            _let,
+        )
     )
 )
 
