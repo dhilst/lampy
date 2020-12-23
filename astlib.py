@@ -17,6 +17,7 @@ from ast import (
     parse,
     In,
     Call,
+    BinOp,
     Expr,
     Expression,
     fix_missing_locations,
@@ -31,16 +32,22 @@ dump = partial(dump, indent=4)
 AST.dump = lambda self: print(dump(self))  # type: ignore
 AST.exec = lambda self: exe_expr(self)  # type: ignore
 AST.eval = lambda self, **kwargs: evl_expr(self, **kwargs)
+AST.cpl  = lambda self: cpl_expr(self)
 
 
 def cpl_expr(e, mode="eval", **kwargs):
     if kwargs:
         e = call(lamb(*kwargs.keys())(e), **kwargs)
-    return compile(fix_missing_locations(Expression(e)), "<string>", mode)
+    e = Expression(e)
+    e.lineno = 1
+    e.col_offset = 1
+    e = fix_missing_locations(e)
+    return compile(e, "<string>", mode)
 
 
 def evl_expr(e, **kwargs):
-    return eval(cpl_expr(e, **kwargs))
+    res = eval(cpl_expr(e, **kwargs))
+    return res
 
 
 def exe_expr(node: Expr):
@@ -83,6 +90,9 @@ def m(*exprs):
 
 def e(expr: str):
     return parse(expr).body[0].value  # type: ignore
+
+def infix(op, a, b):
+    return BinOp(letf=a, op=op, right=b)
 
 
 def lamb(*args):

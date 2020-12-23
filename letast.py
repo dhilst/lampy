@@ -52,8 +52,8 @@ class LetVisitor(NodeTransformer):
         let (M=N) in let (P=Q) in O
             => (lambda M: (lambda P: O)(P=Q))(M=N)
         """
+        self.generic_visit(node)
         if node.left.func.id in ("let", "match") and isinstance(node.ops[0], In):
-            self.visit(node.comparators[0])
             if node.left.func.id == "let":
                 if len(node.comparators) > 1:
                     body = node.comparators[-1]
@@ -92,10 +92,6 @@ def letfy_module(modpath):
 
     source = open(modpath).read()
     source = re.sub(r"(?<=in)\s*\n", "", source)
-    source = re.sub(r"^\s*#.*", "", source)
-    r = r"let\s+(.*)\s+in"
-    sub = r"let (\1) in"
-    source, subs = re.subn(r, sub, source)
     old_ast = parse(source)
     new_ast = fix_missing_locations(LetVisitor().visit(old_ast))
     new_code_obj = compile(new_ast, modpath, "exec")
