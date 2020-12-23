@@ -17,61 +17,28 @@ from ast import (
     keyword,
     dump,
 )
-from functools import partial
 
-dump = partial(dump, indent=4)
-
-
-def arguments(
-    posonlyargs=[],
-    args=[],
-    varg=arg("args"),
-    kwonlyargs=[],
-    kw_defaults=[],
-    kwarg=arg("kwargs"),
-    defaults=[],
-):
-    return arguments(
-        posonlyargs=posonlyargs,
-        arg=args,
-        varg=varg,
-        kwonlyargs=kwonlyargs,
-        kw_defaults=kw_defaults,
-        kwarg=kwarg,
-        defaults=defaults,
-    )
-
-
-def create_args(keywords):
-    return arguments(
-        posonlyargs=[],
-        args=[arg(k.arg) for k in keywords],
-        kwonlyargs=[],
-        kw_defaults=[],
-        defaults=[],
-    )
+from astlib import call, arguments, let, lamb, arguments, keywords, Let
+from astlib import arguments as create_args
 
 
 def create_let_lamb(call, body):
     return Lambda(
-        args=_arguments(
+        args=arguments(
             args=[arg(arg=a.id) for a in call.args],
         ),
         body=body,
     )
 
 
-def create_let_call(call, body):
-    if call.args:
-        if call.keywords:
+def create_let_call(call_, body):
+    if call_.args:
+        if call_.keywords:
             raise SyntaxError(
                 "Can't have keywords and non-keywords arguments at same let call"
             )
-        return create_let_lamb(call, body)
-    args = create_args(call.keywords)
-    lamb = Lambda(args, body=body)
-    kwds = [keyword(k.arg, k.value) for k in call.keywords]
-    return Call(lamb, args=[], keywords=kwds)
+        return create_let_lamb(call_, body)
+    return let(**{key.arg: key.value for key in call_.keywords})(body)
 
 
 class LetVisitor(NodeTransformer):
@@ -123,14 +90,14 @@ def letdec(f):
 def letfy_module(modpath):
     import re
 
-    source = re.sub(r"(?<=in)\s*\r?\n", "", open(modpath).read())
+    source = open(modpath).read()
+    source = re.sub(r"(?<=in)\s*\n", "", source)
+    source = re.sub(r"^\s*#.*", "", source)
+    r = r"let\s+(.*)\s+in"
+    sub = r"let (\1) in"
+    source, subs = re.subn(r, sub, source)
     old_ast = parse(source)
     new_ast = fix_missing_locations(LetVisitor().visit(old_ast))
     new_code_obj = compile(new_ast, modpath, "exec")
     exec(new_code_obj)
     return new_code_obj
-
-
-# print(foo())  # => 10
-
-print(dump(e("a + 1")))

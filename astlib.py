@@ -7,6 +7,7 @@ from ast import (
     AST,
     Load,
     Constant as const,
+    Constant,
     Name,
     Module,
     NodeTransformer,
@@ -17,6 +18,7 @@ from ast import (
     In,
     Call,
     Expr,
+    Expression,
     fix_missing_locations,
     keyword,
     dump,
@@ -28,6 +30,27 @@ dump = partial(dump, indent=4)
 
 AST.dump = lambda self: print(dump(self))  # type: ignore
 AST.exec = lambda self: exe_expr(self)  # type: ignore
+AST.eval = lambda self, **kwargs: evl_expr(self, **kwargs)
+
+
+def cpl_expr(e, mode="eval", **kwargs):
+    if kwargs:
+        e = call(lamb(*kwargs.keys())(e), **kwargs)
+    return compile(fix_missing_locations(Expression(e)), "<string>", mode)
+
+
+def evl_expr(e, **kwargs):
+    return eval(cpl_expr(e, **kwargs))
+
+
+def exe_expr(node: Expr):
+    exec(
+        compile(
+            m(node),
+            "<string>",
+            "exec",
+        )
+    )
 
 
 def arguments(
@@ -63,12 +86,21 @@ def e(expr: str):
 
 
 def lamb(*args):
-    *args, e = args
-    return Lambda(args=arguments(args=[arg(a) for a in args]), body=e)
+    def inner(e):
+        return Lambda(args=arguments(args=[arg(a) for a in args]), body=e)
+
+    return inner
 
 
 def name(n, ctx=Load()):
     return Name(n, ctx=ctx)
+
+
+def where(*args):
+    def inner(expr):
+        return call(expr, *args)
+
+    return inner
 
 
 def keywords(**kwargs):
@@ -82,23 +114,45 @@ def call(func, *args, **kwargs):
     return Call(func, args=args, keywords=keywords(**kwargs))
 
 
-def let(**kwargs):
+def letargs(*args):
     def inner(e):
-        args = list(kwargs.keys()) + [e]
-        return call(lamb(*args), **kwargs)
+        return lamb(*args)(e)
 
     return inner
 
 
-def exe_expr(node: Expr):
-    exec(
-        compile(
-            m(node),
-            "<string>",
-            "exec",
-        )
-    )
+def let(**kwargs):
+    def inner(e):
+        return call(lamb(*kwargs.keys())(e), **kwargs)
+
+    return inner
 
 
-call(lamb("n", e("print(n)")), const(1)).exec()
-let(n=const(1))(e("print(n + 1)")).exec()
+def match(var):
+    def inner(arms: Dict[AST, AST]) -> AST:
+        pass
+
+    return inner
+
+
+class Let:
+    args = []
+    kwargs = {}
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    def in_(self, expr):
+        if hasattr(self, "result"):
+            return self.result
+        self.expr = expr
+        self.result = let(*self.args, **self.kwargs)(expr)
+        return self.result
+
+
+def astasdict(it):
+    return dict(it)
+
+
+# print(Let().let(a=const(1)).nin(e("a + 1")).eval())
