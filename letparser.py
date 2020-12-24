@@ -16,16 +16,20 @@ grammar = """
     ?let : "let" (arg|kwarg) "in" let | expr
     arg : ID
     kwarg : arg "=" let
-    ?expr : "(" let ")" | infix
-    ?infix : infix OP single | single
-    ?single : const | FQID | ID | call
-    call: (ID | FQID) "(" (let ("," let)?)? ")"
-    FQID : ID "." ID+
-    OP : /([+-])/
+    ?expr : ifternary
+    ifternary : let "if" boolexpr "else" let | boolexpr
+    ?boolexpr : boolexpr BOOL_OP let | aritexpr
+    ?aritexpr : aritexpr OP call | call
+    ?call: atom callargs+ | atom
+    callargs : "(" (let ("," let)* )* ")"
+    ?atom: FQID | ID | const | "(" let ")"
     const : bool | signed_number | escaped_string
     signed_number: SIGNED_NUMBER
     escaped_string : ESCAPED_STRING
     bool : BOOL
+    BOOL_OP : "==" | ">=" | ">" | "<" | "<=" | "or" | "and"
+    FQID : ID "." ID+
+    OP : "+" | "-" | "*" | "/"
     BOOL : "true" | "false"
 
     %import common.WS
@@ -61,6 +65,9 @@ class Transmformator(LarkTransformer):
         return astlib.letargs(*tree[0])(e)
 
     def ID(self, tree):
+        if hasattr(tree, "value") and tree.value in ("true", "false"):
+            from ast import Constant
+            return Constant("true" == tree.value)
         return astlib.name(tree[0])
 
     def FQID(self, tree):
@@ -77,30 +84,61 @@ class Transmformator(LarkTransformer):
                 }
         return opmap[token]()
 
+    def boolexpr(self, tree):
+        from ast import Compare
+        return Compare(tree[0], [tree[1]], comparators=[tree[2]])
+
 
     def infix(self, tree):
         from ast import BinOp
         left = tree[0]
         if isinstance(left, list):
             left = left[0]
-        right = tree[0]
+        right = tree[2]
         if isinstance(right, list):
             right = right[0]
         res = BinOp(left, tree[1], right)
-        res.dump()
         return res
 
     def call(self, tree):
-        tree[1] = tree[1][0] if isinstance(tree[1], list) and len(tree[1]) else tree[1]
-        res = astlib.call(tree[0], tree[1])
-        res.dump()
-        return res
+        name, *args = tree
+        call = astlib.call(name, *args[0][1:])
+        for a in args[1:]:
+            call = astlib.call(call, *a[1:])
+        return call
+
+    def callargs(self, tree):
+        return ("callargs", *tree)
+
+    def BOOL_OP(selfm, tree):
+        from ast import BoolOp, Eq, NotEq, Lt, LtE, Gt, GtE, Is, IsNot, In, NotIn
+        objmap = {
+            "==": Eq,
+            "!-": NotEq,
+            "<": Lt,
+            ">": Gt,
+            "<=": LtE,
+            ">=": GtE,
+            "is": Is,
+            "is not": IsNot,
+            }
+        return objmap[tree]()
 
     def const(self, tree):
-        return tree
+        return tree[0]
 
     def signed_number(self, tree):
         return astlib.const(float(tree[0].value))
+
+    def ifternary(self, tree):
+        if len(tree) == 1:
+            return tree[0]
+        from ast import IfExp
+        return IfExp(tree[1], tree[0], tree[2])
+
+    def aritexpr(self, tree):
+        from ast import BinOp
+        return BinOp(tree[0], tree[1], tree[2])
 
     def bool(self, tree):
         if tree[0].value == "true":
@@ -111,5 +149,3 @@ class Transmformator(LarkTransformer):
             raise ValueError(f"{tree[0]} is not true|false")
 
 
-res = parse("let a = let x in x + 1 + 100 in a(1)")
-print(res.eval())

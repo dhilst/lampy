@@ -32,7 +32,7 @@ dump = partial(dump, indent=4)
 AST.dump = lambda self: print(dump(self))  # type: ignore
 AST.exec = lambda self: exe_expr(self)  # type: ignore
 AST.eval = lambda self, **kwargs: evl_expr(self, **kwargs)
-AST.cpl  = lambda self: cpl_expr(self)
+AST.compile = lambda self: cpl_expr(self)
 
 
 def cpl_expr(e, mode="eval", **kwargs):
