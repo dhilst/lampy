@@ -5,38 +5,77 @@ from collections.abc import Iterable
 from lark import Lark, Transformer as LarkTransformer, Token
 from typing import *
 from functools import wraps
+from collections import namedtuple as nt
+
+nt = lambda s: nt("_".join(s), s)
 
 Buffer = io.BufferedIOBase
 Result = Optional[Tuple[Any, Buffer, Callable[[Any, Buffer], Any]]]
 RegexResult = tuple[re.Match, Buffer, callable]
 Token = tuple[str, str]  # (type, value)
 
-grammar = """
+grammar = r"""
     ?start : let
-    ?let : "let" (arg|kwarg) "in" let | expr
+    ?let : letargs | letdef | letimport | expr
+    letargs : "let" (args|kwargs) "in" let
+    letdef : "let" "def" ID ID* "in" expr "in" let
+    ?letimport : "let" "import" fqalias ("," fqalias)* "in" let | letfromimport
+    letfromimport : "let" "from" fqid "import" idalias ("," idalias)* "in" let
+
+    args : arg+
+    kwargs : kwarg+
     arg : ID
     kwarg : arg "=" let
     ?expr : ifternary
-    ifternary : let "if" boolexpr "else" let | boolexpr
-    ?boolexpr : boolexpr BOOL_OP let | aritexpr
-    ?aritexpr : aritexpr OP call | call
+
+    ?ifternary : let "if" boolexpr "else" let | boolexpr
+
+    ?boolexpr : boolexpr BOOL_OP let | binopexpr
+    bool : BOOL
+    BOOL_OP : "==" | ">=" | ">" | "<" | "<=" | "or" | "and" | "not"
+    BOOL : "True" | "False"
+
+    ?binopexpr : binopexpr MATH_PLUS mulexpr | mulexpr
+    ?mulexpr : mulexpr MATH_MUL powexpr | powexpr
+    ?powexpr : integer MATH_POW powexpr | comprehensions
+    MATH_PLUS: "+" | "-"
+    MATH_MUL : /\*[^*]/ | "//" | "/" | "%"
+    MATH_POW: "**"
+    MATH_UNARY : "+" | "-"
+
+    ?comprehensions  : listcomp
+    ?listcomp        : "[" listcompexpr "]" | gencomp 
+    ?gencomp         : "(" listcompexpr ")" | dictcomp
+    ?dictcomp        : "{" dictcompexpr "}" | setcomp
+    ?setcomp         : "{" listcompexpr "}" | call
+    listcompexpr     : let         "for" (ID ("," ID)*) "in" let ("if" boolexpr ("," "if" boolexpr)*)?
+    dictcompexpr     : let ":" let "for" (ID ("," ID)*) "in" let ("if" boolexpr ("," "if" boolexpr)*)?
+
+
     ?call: atom callargs+ | atom
     callargs : "(" (let ("," let)* )* ")"
-    ?atom: FQID | ID | const | "(" let ")"
-    const : bool | signed_number | escaped_string
-    signed_number: SIGNED_NUMBER
-    escaped_string : ESCAPED_STRING
-    bool : BOOL
-    BOOL_OP : "==" | ">=" | ">" | "<" | "<=" | "or" | "and"
-    FQID : ID "." ID+
-    OP : "+" | "-" | "*" | "/"
-    BOOL : "true" | "false"
+
+    ?atom: "(" let ")" | const | fqid
+
+    const : bool | integer | STRING_CONST 
+    integer : /[+-]?\d+/ | /0x[a-fA-F]+/ | /0o[0-7]+/ | /0b[12]+/ | float
+    float : /[+-]?\d+\.\d+/
+
+    STRING_CONST.5: STRING_MODIFIER? ESCAPED_STRING
+
+    fqalias : fqid ("as" ID)?
+    idalias : ID ("as" ID)?
+    fqid : ID ("." ID)+ | ID
+    ID : CNAME
+    STRING_MODIFIER.10 :  "f" | "r" | "b"
+
 
     %import common.WS
-    %import common.SIGNED_NUMBER
     %import common.ESCAPED_STRING
-    %import common.CNAME -> ID
+    %import common.CNAME
     %import common.SH_COMMENT
+    %import common.INT
+    %import common.NUMBER
     %ignore WS
     %ignore SH_COMMENT
 """
@@ -46,17 +85,18 @@ let_parser = Lark(grammar, parser="lalr")
 
 def parse(input_):
     res = let_parser.parse(input_)
+    print(res.pretty())
+    return
     res = Transmformator().transform(res)
     return res
 
 
 class Transmformator(LarkTransformer):
-    def kwarg(self, tree):
-        rest = tree[1][0] if isinstance(tree, Iterable) and len(tree) > 1 and isinstance(tree[1], list) else tree[1]
-        return { tree[0][0]: rest }
+    def kwargs(self, tree):
+        return { t.children[0].children[0].id: t.children[1] for t in tree }
 
-    def arg(self, tree):
-        return [tree[0].id]
+    def args(self, tree):
+        return [t.children[0].id for t in tree]
 
     def let(self, tree):
         e = tree[1][0] if isinstance(tree[1], list) and len(tree[1]) >= 1 else tree[1]
@@ -80,9 +120,31 @@ class Transmformator(LarkTransformer):
                 "+": Add,
                 "-": Sub,
                 "*": Mult,
+                "@": MatMulti,
                 "/": Div,
+                "//": FloorDiv,
+                "%": Mod,
+                "**": Pow,
+                "<<": LShift,
+                ">>": RShift,
+                "|": BitOr,
+                "^": BitXor,
+                "&": BitAnd,
                 }
+
         return opmap[token]()
+
+    def unaryop(self, tree):
+        from ast import Invert, Not, UAdd, USub
+        unarymap = {
+            "~": Invert,
+            "not": Not,
+            "+": UAdd,
+            "-": Usub,
+        }
+        return unarymap[tree[0].value]
+
+
 
     def boolexpr(self, tree):
         from ast import Compare
@@ -111,7 +173,7 @@ class Transmformator(LarkTransformer):
         return ("callargs", *tree)
 
     def BOOL_OP(selfm, tree):
-        from ast import BoolOp, Eq, NotEq, Lt, LtE, Gt, GtE, Is, IsNot, In, NotIn
+        from ast import BoolOp, Eq, NotEq, Lt, LtE, Gt, GtE, Is, IsNot, In, NotIn, Or, And, Compare
         objmap = {
             "==": Eq,
             "!-": NotEq,
@@ -121,8 +183,10 @@ class Transmformator(LarkTransformer):
             ">=": GtE,
             "is": Is,
             "is not": IsNot,
+            "or": Or,
+            "and": And,
             }
-        return objmap[tree]()
+        return nt("tokenv value op")(objmap[tree](), Compare)
 
     def const(self, tree):
         return tree[0]
@@ -136,7 +200,7 @@ class Transmformator(LarkTransformer):
         from ast import IfExp
         return IfExp(tree[1], tree[0], tree[2])
 
-    def aritexpr(self, tree):
+    def binopexpr(self, tree):
         from ast import BinOp
         return BinOp(tree[0], tree[1], tree[2])
 
