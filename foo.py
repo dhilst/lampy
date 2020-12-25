@@ -7,5 +7,7 @@
 
 
 let from os.path import abspath as a in
-let def b in a(".") in
-    b()
+let def b in a(".") in do
+    b();
+    1
+end

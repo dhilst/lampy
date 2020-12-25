@@ -26,7 +26,9 @@ grammar = r"""
     kwargs : kwarg+
     arg : ID
     kwarg : arg "=" let
-    ?expr : ifternary
+    ?expr : doblock | ifternary
+
+    ?doblock : "do" let (";" let)* "end"
 
     ?ifternary : let "if" boolexpr "else" let | boolexpr
 
