@@ -28,7 +28,11 @@ grammar = r"""
     kwarg : arg "=" let
     ?expr : doblock | ifternary
 
-    ?doblock : "do" let (";" let)* "end"
+    ?doblock : "do" let (";" return )* "end"
+    return : "return" let | yield
+    yield  : "yield" let | let
+
+    tupleexpr : let "," (let ("," let)*)*
 
     ?ifternary : let "if" boolexpr "else" let | boolexpr
 
@@ -95,7 +99,7 @@ def parse(input_):
 
 class Transmformator(LarkTransformer):
     def kwargs(self, tree):
-        return { t.children[0].children[0].id: t.children[1] for t in tree }
+        return {t.children[0].children[0].id: t.children[1] for t in tree}
 
     def args(self, tree):
         return [t.children[0].id for t in tree]
@@ -109,6 +113,7 @@ class Transmformator(LarkTransformer):
     def ID(self, tree):
         if hasattr(tree, "value") and tree.value in ("true", "false"):
             from ast import Constant
+
             return Constant("true" == tree.value)
         return astlib.name(tree[0])
 
@@ -117,27 +122,29 @@ class Transmformator(LarkTransformer):
 
     def OP(self, tree):
         from ast import Add, Sub, Mult, Div, FloorDiv, Mod, Pow
+
         token = tree[0]
         opmap = {
-                "+": Add,
-                "-": Sub,
-                "*": Mult,
-                "@": MatMulti,
-                "/": Div,
-                "//": FloorDiv,
-                "%": Mod,
-                "**": Pow,
-                "<<": LShift,
-                ">>": RShift,
-                "|": BitOr,
-                "^": BitXor,
-                "&": BitAnd,
-                }
+            "+": Add,
+            "-": Sub,
+            "*": Mult,
+            "@": MatMulti,
+            "/": Div,
+            "//": FloorDiv,
+            "%": Mod,
+            "**": Pow,
+            "<<": LShift,
+            ">>": RShift,
+            "|": BitOr,
+            "^": BitXor,
+            "&": BitAnd,
+        }
 
         return opmap[token]()
 
     def unaryop(self, tree):
         from ast import Invert, Not, UAdd, USub
+
         unarymap = {
             "~": Invert,
             "not": Not,
@@ -146,15 +153,14 @@ class Transmformator(LarkTransformer):
         }
         return unarymap[tree[0].value]
 
-
-
     def boolexpr(self, tree):
         from ast import Compare
-        return Compare(tree[0], [tree[1]], comparators=[tree[2]])
 
+        return Compare(tree[0], [tree[1]], comparators=[tree[2]])
 
     def infix(self, tree):
         from ast import BinOp
+
         left = tree[0]
         if isinstance(left, list):
             left = left[0]
@@ -175,7 +181,23 @@ class Transmformator(LarkTransformer):
         return ("callargs", *tree)
 
     def BOOL_OP(selfm, tree):
-        from ast import BoolOp, Eq, NotEq, Lt, LtE, Gt, GtE, Is, IsNot, In, NotIn, Or, And, Compare
+        from ast import (
+            BoolOp,
+            Eq,
+            NotEq,
+            Lt,
+            LtE,
+            Gt,
+            GtE,
+            Is,
+            IsNot,
+            In,
+            NotIn,
+            Or,
+            And,
+            Compare,
+        )
+
         objmap = {
             "==": Eq,
             "!-": NotEq,
@@ -187,7 +209,7 @@ class Transmformator(LarkTransformer):
             "is not": IsNot,
             "or": Or,
             "and": And,
-            }
+        }
         return nt("tokenv value op")(objmap[tree](), Compare)
 
     def const(self, tree):
@@ -200,10 +222,12 @@ class Transmformator(LarkTransformer):
         if len(tree) == 1:
             return tree[0]
         from ast import IfExp
+
         return IfExp(tree[1], tree[0], tree[2])
 
     def binopexpr(self, tree):
         from ast import BinOp
+
         return BinOp(tree[0], tree[1], tree[2])
 
     def bool(self, tree):
@@ -213,5 +237,3 @@ class Transmformator(LarkTransformer):
             return astlib.e("False")
         else:
             raise ValueError(f"{tree[0]} is not true|false")
-
-
