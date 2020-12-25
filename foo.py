@@ -6,8 +6,4 @@
 #
 
 
-let from os.path import abspath as a in
-let def b in a(".") in do
-    b();
-    1
-end
+let a = 1 b = 2 in a, b

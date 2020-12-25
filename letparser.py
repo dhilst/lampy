@@ -50,10 +50,10 @@ grammar = r"""
     MATH_UNARY : "+" | "-"
 
     ?comprehensions  : listcomp
-    ?listcomp        : "[" listcompexpr "]" | gencomp 
-    ?gencomp         : "(" listcompexpr ")" | dictcomp
-    ?dictcomp        : "{" dictcompexpr "}" | setcomp
-    ?setcomp         : "{" listcompexpr "}" | call
+    !?listcomp        : "[" listcompexpr "]" | gencomp 
+    !?gencomp         : "(" listcompexpr ")" | dictcomp
+    !?dictcomp        : "{" dictcompexpr "}" | setcomp
+    !?setcomp         : "{" listcompexpr "}" | call
     listcompexpr     : let         "for" (ID ("," ID)*) "in" let ("if" boolexpr ("," "if" boolexpr)*)?
     dictcompexpr     : let ":" let "for" (ID ("," ID)*) "in" let ("if" boolexpr ("," "if" boolexpr)*)?
 
@@ -63,7 +63,11 @@ grammar = r"""
 
     ?atom: "(" let ")" | const | fqid
 
-    const : bool | integer | STRING_CONST 
+    const : bool | integer | dictconst | listconst | tupleconst | setconst | STRING_CONST 
+    dictconst : "{" let ":" let ("," let ":" let)* "}"
+    listconst : "[" let ("," let)* "]"
+    tupleconst : atom "," atom+
+    setconst : "{" let ("," let)* "}"
     integer : /[+-]?\d+/ | /0x[a-fA-F]+/ | /0o[0-7]+/ | /0b[12]+/ | float
     float : /[+-]?\d+\.\d+/
 
