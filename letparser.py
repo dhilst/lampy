@@ -22,7 +22,7 @@ grammar = r"""
     letargs : "let" (args|kwargs) "in" let
     letdef : "let" "def" ID ID* "in" expr "in" let
     ?letimport : "let" "import" fqalias ("," fqalias)* "in" let | letfromimport
-    letfromimport : "let" "from" fqid "import" idalias ("," idalias)* "in" let
+    letfromimport : "let" "from" relativeid "import" idalias ("," idalias)* "in" let
 
     args : arg+
     kwargs : kwarg+
@@ -79,6 +79,7 @@ grammar = r"""
     STRING_CONST.5: STRING_MODIFIER? ESCAPED_STRING
 
     fqalias : fqid ("as" ID)?
+    !relativeid : "."+ fqalias
     idalias : ID ("as" ID)?
     fqid : ID ("." ID)+ | ID
     ID : CNAME
@@ -106,6 +107,19 @@ def parse(input_):
 
 
 class Transmformator(LarkTransformer):
+    def relativeid(self, tree):
+        from ast import alias
+        from lark import Token
+        res = []
+        for t in tree:
+            if isinstance(t, Token):
+                res.append(t.value)
+            elif isinstance(t, alias):
+                res.append(t.name)
+            else:
+                raise TypeError(f"invalid tree type {tree}")
+        return "".join(res)
+
     def start(self, tree):
         from ast import Module, expr, Expr
 
@@ -118,9 +132,40 @@ class Transmformator(LarkTransformer):
         *imps, cont = tree[0:-1], tree[-1]
         imps = imps[0]
         imp = Import(names=imps)
+        self.statements.append(cont)
         self.statements.append(imp)
 
     def letfromimport(self, tree):
+        from ast import ImportFrom, alias, Attribute
+        from lark import Tree
+        def flat_attrs(attr):
+            if isinstance(attr, str):
+                return attr
+            elif isinstance(attr, Attribute):
+                name = flat_attrs(attr.value)
+            elif hasattr(attr, "value"):
+                name = attr.value.id
+            return ".".join((name, attr.attr))
+
+        def count_dots(fqmod):
+            count = 0
+            for char in fqmod:
+                if char == ".":
+                    count += 1
+                else:
+                    break
+            return count
+
+        is_idalias = isinstance(tree[0], Tree) and tree[0].data == 'idalias'
+        modfqname = flat_attrs(tree[0]) if not is_idalias else tree[0].children[0].id
+        aliases = [alias(a.children[0].id, a.children[1].id)
+                    if len(a.children) == 2 else alias(a.children[0].id) 
+                    for a in tree[1:-1]]
+        cont = tree[-1]
+        level = count_dots(modfqname)
+        fimp = ImportFrom(module=modfqname, names=aliases, level=level)
+        self.statements.append(cont)
+        self.statements.append(fimp)
         return tree
 
     def kwargs(self, tree):
