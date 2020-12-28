@@ -5,9 +5,9 @@ from collections.abc import Iterable
 from lark import Lark, Transformer as LarkTransformer, Token
 from typing import *
 from functools import wraps
-from collections import namedtuple as nt
+from collections import namedtuple
 
-nt = lambda s: nt("_".join(s), s)
+LetToken = namedtuple("LetToken", "token value")
 
 Buffer = io.BufferedIOBase
 Result = Optional[Tuple[Any, Buffer, Callable[[Any, Buffer], Any]]]
@@ -26,7 +26,7 @@ grammar = r"""
     kwargs : kwarg+
     arg : ID
     kwarg : arg "=" let
-    ?expr : doblock | ifternary
+    ?expr : doblock | matchexpr | ifternary
 
     ?doblock : "do" let (";" return )* "end"
     return : "return" let | yield
@@ -34,12 +34,15 @@ grammar = r"""
 
     tupleexpr : let "," (let ("," let)*)*
 
+    matchexpr : "let" "match" ID "in" let "=>" let ("|" atom "=>" let)* "end"
+
     ?ifternary : let "if" boolexpr "else" let | boolexpr
 
     ?boolexpr : boolexpr BOOL_OP let | binopexpr
     bool : BOOL
     BOOL_OP : "==" | ">=" | ">" | "<" | "<=" | "or" | "and" | "not"
     BOOL : "True" | "False"
+    ARROW.10 : "=>"
 
     ?binopexpr : binopexpr MATH_PLUS mulexpr | mulexpr
     ?mulexpr : mulexpr MATH_MUL powexpr | powexpr
@@ -96,7 +99,6 @@ let_parser = Lark(grammar, parser="lalr")
 def parse(input_):
     res = let_parser.parse(input_)
     print(res.pretty())
-    return
     res = Transmformator().transform(res)
     return res
 
@@ -106,6 +108,7 @@ class Transmformator(LarkTransformer):
         return {t.children[0].children[0].id: t.children[1] for t in tree}
 
     def args(self, tree):
+        __import__("ipdb").set_trace()
         return [t.children[0].id for t in tree]
 
     def let(self, tree):
@@ -114,6 +117,22 @@ class Transmformator(LarkTransformer):
             return astlib.let(**tree[0])(e)
         return astlib.letargs(*tree[0])(e)
 
+    def letdef(self, tree):
+        from ast import FunctionDef, arg
+        from astlib import arguments
+
+        name, *args, body, cont = tree
+        fdef = FunctionDef(
+            name=name, args=arguments(args=[arg(a) for a in args]), body=[body]
+        )
+        __import__("ipdb").set_trace()
+        return tree[0]
+
+    def integer(self, tree):
+        from ast import Constant
+
+        return Constant(int(tree[0]))
+
     def ID(self, tree):
         if hasattr(tree, "value") and tree.value in ("true", "false"):
             from ast import Constant
@@ -121,30 +140,38 @@ class Transmformator(LarkTransformer):
             return Constant("true" == tree.value)
         return astlib.name(tree[0])
 
-    def FQID(self, tree):
-        return astlib.name(".".join(t.id for t in tree))
+    def fqid(self, tree):
+        from ast import Attribute, Load
+        from functools import reduce
 
-    def OP(self, tree):
+        if len(tree) == 1:
+            return tree[0]
+        call = Attribute(tree[0], tree[1], ct=Load())
+        res = reduce(
+            lambda a, b: Attribute(a, b.id, ctx=Load()),
+            tree,
+        )
+        return res
+
+    def MATH_PLUS(self, tree):
         from ast import Add, Sub, Mult, Div, FloorDiv, Mod, Pow
 
         token = tree[0]
         opmap = {
-            "+": Add,
-            "-": Sub,
-            "*": Mult,
-            "@": MatMulti,
-            "/": Div,
-            "//": FloorDiv,
-            "%": Mod,
-            "**": Pow,
-            "<<": LShift,
-            ">>": RShift,
-            "|": BitOr,
-            "^": BitXor,
-            "&": BitAnd,
+            r"+": Add,
+            r"-": Sub,
+            r"*": Mult,
+            r"/": Div,
+            r"//": FloorDiv,
+            r"%": Mod,
+            r"**": Pow,
         }
 
         return opmap[token]()
+
+    MATH_MUL = MATH_PLUS
+    MATH_PW = MATH_PLUS
+    MATH_UNARY = MATH_PLUS
 
     def unaryop(self, tree):
         from ast import Invert, Not, UAdd, USub
@@ -175,14 +202,9 @@ class Transmformator(LarkTransformer):
         return res
 
     def call(self, tree):
-        name, *args = tree
-        call = astlib.call(name, *args[0][1:])
-        for a in args[1:]:
-            call = astlib.call(call, *a[1:])
-        return call
+        from ast import Call
 
-    def callargs(self, tree):
-        return ("callargs", *tree)
+        return Call(tree[0], args=tree[1].children[0].children, keywords=[]).compile()
 
     def BOOL_OP(selfm, tree):
         from ast import (

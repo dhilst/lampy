@@ -6,4 +6,4 @@
 #
 
 
-let a = 1 b = 2 in a, b
+let def foo a b in a + b in foo(1,2)
