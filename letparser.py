@@ -101,6 +101,7 @@ let_parser = Lark(grammar, parser="lalr")
 def parse(input_):
     res = let_parser.parse(input_)
     res = Transmformator().transform(res)
+    res.dump()
     return res
 
 
@@ -108,9 +109,19 @@ class Transmformator(LarkTransformer):
     def start(self, tree):
         from ast import Module, expr, Expr
 
-        stmts = [Expr(s) if isinstance(s, expr) else s for s in self.statements]
+        stmts = [Expr(s) if isinstance(s, expr) else s for s in reversed(self.statements)]
         res = Module(body=stmts, type_ignores=[])
         return res
+
+    def letimport(self, tree):
+        from ast import Import, alias, expr, Expr
+        *imps, cont = tree[0:-1], tree[-1]
+        imps = imps[0]
+        imp = Import(names=imps)
+        self.statements.append(imp)
+
+    def letfromimport(self, tree):
+        return tree
 
     def kwargs(self, tree):
         return {t.children[0].children[0].id: t.children[1] for t in tree}
@@ -123,6 +134,13 @@ class Transmformator(LarkTransformer):
         if isinstance(tree[0], dict):
             return astlib.let(**tree[0])(e)
         return astlib.letargs(*tree[0])(e)
+
+    def fqalias(self, tree):
+        from ast import alias
+        name, *_alias = tree
+        if _alias:
+            return alias(name.id, _alias[0].id)
+        return alias(name.id)
 
     def body_helper(self, body):
         from ast import expr, Return
@@ -159,9 +177,9 @@ class Transmformator(LarkTransformer):
             returns=None,
             type_commends=[],
         )
-        self.statements.append(fdef)
         self.statements.append(cont)
-        return name
+        self.statements.append(fdef)
+        return cont
 
     def integer(self, tree):
         from ast import Constant

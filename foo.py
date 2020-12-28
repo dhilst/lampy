@@ -6,5 +6,6 @@
 #
 
 
+let import math as m, sys in
 let def foo a b in a + b in
-    print(foo(1, 2))
+    print(foo(1, 2) + m.pi)
