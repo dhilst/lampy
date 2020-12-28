@@ -7,6 +7,8 @@ from typing import *
 from functools import wraps
 from collections import namedtuple
 
+from stackdict import StackDict
+
 LetToken = namedtuple("LetToken", "token value")
 
 Buffer = io.BufferedIOBase
@@ -15,7 +17,7 @@ RegexResult = tuple[re.Match, Buffer, callable]
 Token = tuple[str, str]  # (type, value)
 
 grammar = r"""
-    ?start : let
+    start : let
     ?let : letargs | letdef | letimport | expr
     letargs : "let" (args|kwargs) "in" let
     letdef : "let" "def" ID ID* "in" expr "in" let
@@ -69,7 +71,7 @@ grammar = r"""
     const : bool | integer | dictconst | listconst | tupleconst | setconst | STRING_CONST 
     dictconst : "{" let ":" let ("," let ":" let)* "}"
     listconst : "[" let ("," let)* "]"
-    tupleconst : atom "," atom+
+    ?tupleconst : atom "," atom+
     setconst : "{" let ("," let)* "}"
     integer : /[+-]?\d+/ | /0x[a-fA-F]+/ | /0o[0-7]+/ | /0b[12]+/ | float
     float : /[+-]?\d+\.\d+/
@@ -98,17 +100,22 @@ let_parser = Lark(grammar, parser="lalr")
 
 def parse(input_):
     res = let_parser.parse(input_)
-    print(res.pretty())
     res = Transmformator().transform(res)
     return res
 
 
 class Transmformator(LarkTransformer):
+    def start(self, tree):
+        from ast import Module, expr, Expr
+
+        stmts = [Expr(s) if isinstance(s, expr) else s for s in self.statements]
+        res = Module(body=stmts, type_ignores=[])
+        return res
+
     def kwargs(self, tree):
         return {t.children[0].children[0].id: t.children[1] for t in tree}
 
     def args(self, tree):
-        __import__("ipdb").set_trace()
         return [t.children[0].id for t in tree]
 
     def let(self, tree):
@@ -117,16 +124,44 @@ class Transmformator(LarkTransformer):
             return astlib.let(**tree[0])(e)
         return astlib.letargs(*tree[0])(e)
 
+    def body_helper(self, body):
+        from ast import expr, Return
+
+        # place return in the last expression of body
+        if isinstance(body, expr):
+            body = [Return(body)]
+        elif isinstance(body, list) and not isinstance(body[-1], Return):
+            body[-1] = Return(body[-1])
+
+        return body
+
+    def __init__(self):
+        self.statements = []
+
     def letdef(self, tree):
-        from ast import FunctionDef, arg
-        from astlib import arguments
+        from ast import FunctionDef, arg, Lambda, arguments
 
         name, *args, body, cont = tree
+        body = self.body_helper(body)
         fdef = FunctionDef(
-            name=name, args=arguments(args=[arg(a) for a in args]), body=[body]
+            name=name.id,
+            args=arguments(
+                posonlyargs=[],
+                args=[arg(a.id) for a in args],
+                vararg=arg("args"),
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=arg("kwargs"),
+                defaults=[],
+            ),
+            body=body,
+            decorator_list=[],
+            returns=None,
+            type_commends=[],
         )
-        __import__("ipdb").set_trace()
-        return tree[0]
+        self.statements.append(fdef)
+        self.statements.append(cont)
+        return name
 
     def integer(self, tree):
         from ast import Constant
@@ -138,7 +173,8 @@ class Transmformator(LarkTransformer):
             from ast import Constant
 
             return Constant("true" == tree.value)
-        return astlib.name(tree[0])
+
+        return astlib.name(tree.value)
 
     def fqid(self, tree):
         from ast import Attribute, Load
@@ -201,10 +237,19 @@ class Transmformator(LarkTransformer):
         res = BinOp(left, tree[1], right)
         return res
 
+    def tupleconst(self, tree):
+        return tree
+
+    def callargs(self, tree):
+        if isinstance(tree[0], list):
+            return tree[0]
+        return tree
+
     def call(self, tree):
         from ast import Call
 
-        return Call(tree[0], args=tree[1].children[0].children, keywords=[]).compile()
+        res = Call(tree[0], args=tree[1], keywords=[])
+        return res
 
     def BOOL_OP(selfm, tree):
         from ast import (

@@ -31,8 +31,8 @@ dump = partial(dump, indent=4)
 
 AST.dump = lambda self: print(dump(self))  # type: ignore
 AST.exec = lambda self: exe_expr(self)  # type: ignore
-AST.eval = lambda self, **kwargs: evl_expr(self, **kwargs)
-AST.compile = lambda self: cpl_expr(self)
+AST.eval = lambda self, **kwargs: evl_module(self)
+AST.compile = lambda self: cpl_module(self)
 
 
 def cpl_expr(e, mode="eval", **kwargs):
@@ -45,8 +45,17 @@ def cpl_expr(e, mode="eval", **kwargs):
     return compile(e, "<string>", mode)
 
 
+def cpl_module(m):
+    return compile(fix_missing_locations(m), "<string>", "exec")
+
+
 def evl_expr(e, **kwargs):
     res = eval(cpl_expr(e, **kwargs))
+    return res
+
+
+def evl_module(m):
+    res = eval(cpl_module(m))
     return res
 
 
@@ -90,6 +99,7 @@ def m(*exprs):
 
 def e(expr: str):
     return parse(expr).body[0].value  # type: ignore
+
 
 def infix(op, a, b):
     return BinOp(letf=a, op=op, right=b)
