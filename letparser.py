@@ -36,7 +36,8 @@ grammar = r"""
 
     tupleexpr : let "," (let ("," let)*)*
 
-    matchexpr : "let" "match" ID "in" let "=>" let ("|" atom "=>" let)* "end"
+    matchexpr : "let" "match" ID "in" pattern ("|" pattern)* "end"
+    pattern:  let "=>" let
 
     ?ifternary : let "if" boolexpr "else" let | boolexpr
 
@@ -134,6 +135,27 @@ class Transmformator(LarkTransformer):
         imp = Import(names=imps)
         self.statements.append(cont)
         self.statements.append(imp)
+        return imp
+
+    def matchexpr(self, tree):
+        from ast import Name, Call, Load
+
+        name, patterns = tree[0].id, tree[1:]
+        return astlib.match(name, patterns)
+
+    def pattern(self, tree):
+        def _f(value):
+            from ast import Constant, Name
+            from lark import Token, Tree
+            if isinstance(value, Token):
+                return value.value
+            elif isinstance(value, Tree):
+                return pattern(value.children[0])
+            else:
+                return value
+        t1, t2 = _f(tree[0]), _f(tree[1])
+        return t1, t2
+
 
     def letfromimport(self, tree):
         from ast import ImportFrom, alias, Attribute
@@ -166,7 +188,7 @@ class Transmformator(LarkTransformer):
         fimp = ImportFrom(module=modfqname, names=aliases, level=level)
         self.statements.append(cont)
         self.statements.append(fimp)
-        return tree
+        return fimp
 
     def kwargs(self, tree):
         return {t.children[0].children[0].id: t.children[1] for t in tree}

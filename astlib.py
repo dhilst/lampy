@@ -30,43 +30,24 @@ dump = partial(dump, indent=4)
 
 
 AST.dump = lambda self: print(dump(self))  # type: ignore
-AST.exec = lambda self: exe_expr(self)  # type: ignore
-AST.eval = lambda self, **kwargs: evl_module(self)
-AST.compile = lambda self: cpl_module(self)
+AST.eval = lambda self, **kwargs: _eval(self, **kwargs)
+AST.compile = lambda self, **kwargs: _compile(self, **kwargs)
 
 
-def cpl_expr(e, mode="eval", **kwargs):
+def _compile(e, **kwargs):
     if kwargs:
         e = call(lamb(*kwargs.keys())(e), **kwargs)
-    e = Expression(e)
-    e.lineno = 1
-    e.col_offset = 1
-    e = fix_missing_locations(e)
-    return compile(e, "<string>", mode)
+
+    if isinstance(e, Module):
+        mode = "exec"
+    else:
+        mode = "eval"
+        e = Expression(e)
+    return compile(fix_missing_locations(e), "<string>", mode)
 
 
-def cpl_module(m):
-    return compile(fix_missing_locations(m), "<string>", "exec")
-
-
-def evl_expr(e, **kwargs):
-    res = eval(cpl_expr(e, **kwargs))
-    return res
-
-
-def evl_module(m):
-    res = eval(cpl_module(m))
-    return res
-
-
-def exe_expr(node: Expr):
-    exec(
-        compile(
-            m(node),
-            "<string>",
-            "exec",
-        )
-    )
+def _eval(e, **kwargs):
+    return eval(_compile(e, **kwargs))
 
 
 def arguments(
@@ -148,12 +129,6 @@ def let(**kwargs):
     return inner
 
 
-def match(var):
-    def inner(arms: Dict[AST, AST]) -> AST:
-        pass
-
-    return inner
-
 
 class Let:
     args = []
@@ -175,4 +150,56 @@ def astasdict(it):
     return dict(it)
 
 
+def match(name, patterns, _locals = {}):
+    for m, expr in patterns:
+        union = unify(name, m, locals_ = _locals)
+        if union is not None:
+            return call(lamb(*union.keys())(expr), **union)
+
+    return None
+
+def lazy(s):
+    return parse(s, mode="eval").body
+
+def unify(value, pattern, s = {}, locals_={}):
+    from collections.abc import Iterable
+    from ast import Tuple
+    __import__('ipdb').set_trace()
+    if value == pattern:
+        return { **s, pattern: value }
+    if isinstance(value, Constant) and isinstance(pattern, Name):
+        return { **s, pattern.id: value }
+    elif isinstance(value, Name) and isinstance(pattern, Constant) and locals_.get(value.id) == pattern.value:
+        return { **s }
+    elif isinstance(value, Name) and isinstance(pattern, Name):
+        return { **s, pattern.id : value }
+    elif isinstance(value, Constant) and isinstance(pattern, Constant) and value.value == pattern.value:
+        return { **s }
+    elif isinstance(pattern, Tuple) and isinstance(value, Tuple) and len(pattern.elts) == len(value.elts):
+        tmp = {}
+        for a, b in zip(value.elts, pattern.elts):
+            res = unify(a, b, s)
+            if res is None:
+                return None
+            else:
+                tmp.update(res)
+        return tmp
+    elif isinstance(pattern, Call):
+        klass_name = pattern.func.id
+        klass = locals_.get(klass_name)
+        if klass is None:
+            return None
+
+        elif isinstance(value, Constant):
+            if getattr(value, pattern.keywords[0].arg) == pattern.keywords[0].value.value:
+                return { **s, pattern.keywords[0].arg: value.value }
+            else:
+                return None
+
+        elif isinstance(value, Name):
+            return { **s, pattern.keywords[0].value.id: e(repr(getattr(locals_.get(value.id), pattern.keywords[0].arg))) }
+    else:
+        return None # unify faile:
+
 # print(Let().let(a=const(1)).nin(e("a + 1")).eval())
+

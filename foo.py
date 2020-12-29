@@ -6,6 +6,5 @@
 #
 
 
-let import math as m, sys in
-let def foo a b in a + b in
-    print(foo(1, 2) + m.pi)
+let def fact a in let match a in 0 => 1 | n => n + 1 end in
+    print(fact(5))
