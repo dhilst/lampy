@@ -1,22 +1,35 @@
+import sys
+sys.setrecursionlimit(100)
+from typing import Tuple
+from ast import parse, fix_missing_locations, Expression, NodeTransformer, parse # type: ignore
 from astlib import lazy, unify, match
+from letast import matchdec
+
 
 class Foo:
     foo = 1
 
+
 x = Foo()
-#x = 0
-
-res = match(
-    lazy("x"),
-    (
-        ( lazy("1"), lazy("0")     ),
-        ( lazy("Foo(foo=n)"), lazy("n - 1") ),
-    ),
-    _locals=locals())
 
 
-from ast import *
-if res is not None:
-    res.dump()
-    print(eval(compile(fix_missing_locations(Expression(res)), "<string>", "eval")))
+#@matchdec
+#def fact(n):
+#    return match(n, { 0: 1, v: v * fact(v - 1) })
 
+#@matchdec
+#def getfoo1(f):
+#    return match(f, { Foo(foo=_foo) : _foo, _: 0 })
+
+
+
+from astlib import match
+def fact(n):
+    return match(n,
+        (0,   lambda: 1),
+        ("x", lambda x: x * fact(x - 1))
+    )
+
+match(Foo(), ("Foo(x=1)", lambda obj: print("foo is", obj)))
+
+print(fact(5))

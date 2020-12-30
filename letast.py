@@ -53,7 +53,7 @@ class LetVisitor(NodeTransformer):
             => (lambda M: (lambda P: O)(P=Q))(M=N)
         """
         self.generic_visit(node)
-        if node.left.func.id in ("let", "match") and isinstance(node.ops[0], In):
+        if node.left.func.id == "let" and isinstance(node.ops[0], In):
             if node.left.func.id == "let":
                 if len(node.comparators) > 1:
                     body = node.comparators[-1]
@@ -64,18 +64,57 @@ class LetVisitor(NodeTransformer):
                 else:
                     call = create_let_call(node.left, node.comparators[0])
                 return fix_missing_locations(call)
-            elif node.left.func.id == "match":
-                __import__("ipdb").set_trace()
         return node
 
     def visit_FunctionDef(self, node):
         found = None
         node.decorator_list = list(
-            filter(lambda d: d.id != "letdec", node.decorator_list)
+            filter(lambda d: d.id not in ("letdec", "matchdec"), node.decorator_list)
         )
         self.generic_visit(node)
         return node
 
+    def visit_Call(self, node):
+        self.generic_visit(node)
+        import astlib
+        from ast import Call, arg, Starred, Load, Name, Tuple as ASTTuple
+        if hasattr(node.func, "id") and node.func.id == "match":
+            x = node.args[0]
+            d = node.args[1]
+            patterns = [[a, b] for a, b in zip(d.keys, d.values)]
+            for p in patterns:
+                if isinstance(p[0], Name):
+                    p[1] = astlib.lamb()(astlib.let(**{ p[0].id: x })(p[1]))
+                    p[0] = astlib.let(**{ p[0].id: x })(p[0])
+                elif isinstance(p[0], Call):
+                    p[1] = astlib.lamb()(astlib.let(**{ k.value.id : astlib.call("getattr", x, k.arg) for k in p[0].keywords })(p[1]))
+                    p[0] = astlib.lamb()(p[0])
+            patterns = ASTTuple([ASTTuple([a, b], ctx=Load()) for a, b in patterns], ctx=Load())
+            res = Call(func=Name("match", ctx=Load()),
+                    args=[x, patterns],
+                    keywords=[])
+            return res
+        return node
+
+    def visit_FunctionDef(self, node):
+        found = None
+        node.decorator_list = list(
+            filter(lambda d: d.id != "matchdec", node.decorator_list)
+        )
+        self.generic_visit(node)
+        return node
+
+def matchdec(f):
+    import inspect, types
+    source = inspect.getsource(f)
+    old_code_f = f.__code__
+    old_ast = parse(source)
+    locals_ = f.__globals__
+    new_ast = LetVisitor().visit(old_ast)
+    new_ast = fix_missing_locations(new_ast)
+    new_code_obj = compile(new_ast, old_code_f.co_filename, "exec")
+    new_f = types.FunctionType(new_code_obj.co_consts[0], f.__globals__)
+    return new_f
 
 def letdec(f):
     source = inspect.getsource(f)
