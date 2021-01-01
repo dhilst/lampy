@@ -1,35 +1,45 @@
 import sys
-sys.setrecursionlimit(100)
 from typing import Tuple
 from ast import parse, fix_missing_locations, Expression, NodeTransformer, parse # type: ignore
 from astlib import lazy, unify, match
 from letast import matchdec
 
-
-class Foo:
-    foo = 1
-
-
-x = Foo()
+def sum(*values):
+    return match(values,
+            ("[]", lambda: 0),
+            ("a, *b", lambda a, b: a + sum(*b)))
 
 
-#@matchdec
-#def fact(n):
-#    return match(n, { 0: 1, v: v * fact(v - 1) })
-
-#@matchdec
-#def getfoo1(f):
-#    return match(f, { Foo(foo=_foo) : _foo, _: 0 })
-
-
-
-from astlib import match
 def fact(n):
     return match(n,
-        (0,   lambda: 1),
-        ("x", lambda x: x * fact(x - 1))
-    )
+            ("0", lambda: 1),
+            ("n", lambda n: n * fact(n-1)))
 
-match(Foo(), ("Foo(x=1)", lambda obj: print("foo is", obj)))
+def map_(cb, it):
+    return match(it,
+            ("[]", lambda: []),
+            ("a, *b", lambda a, b: [cb(a)] + map_(cb, b)))
 
+
+class Bar:
+    bar = 1
+
+class Foo:
+    bar = Bar()
+    zar = "hello"
+
+match(Foo(),
+    # object destruction
+    ("Foo(zar, bar=Bar(bar=1))", lambda zar: print(f"{zar} pattern match")),
+    ("_", lambda: print("whaever")))
+
+print(
+    match((False, False),
+        ("True,_",  lambda : f"True  ?"),
+        ("False,_", lambda : f"False ?"))
+)
+
+
+print(sum(1, 2, 3, 4))
 print(fact(5))
+print(map_(str.upper, ["foo", "bar"]))

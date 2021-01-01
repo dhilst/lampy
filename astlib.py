@@ -10,6 +10,7 @@ from ast import (
     Constant,
     Name,
     Module,
+    NodeVisitor,
     NodeTransformer,
     arguments as ast_arguments,
     arg,
@@ -155,6 +156,8 @@ def match(name, *patterns: Iterator[Tuple[str, AST]], locals_=None):
         import inspect
         locals_ = inspect.currentframe().f_back.f_locals
     for m, expr in patterns:
+        if m == "_":
+            return expr()
         union = unify(name, m, locals_=locals_)
         if union is not None:
             if callable(expr):
@@ -174,85 +177,147 @@ def lazy(s):
     return parse(s, mode="eval").body
 
 
+def attrs(obj, *attrs):
+    for a in attrs:
+        try:
+            return getattr(obj, a)
+        except AttributeError:
+            pass
+    return obj
+
+
+class SimplifyVisitor(NodeTransformer):
+
+    def visit_Call(self, node):
+        self.generic_visit(node)
+        res = ("call", node.func[1], tuple(attrs(b, "value", "id") for a, b in zip(node.args[0::2], node.args[1::2])), { k.arg: attrs(k.value, "value", "id") for k in node.keywords })
+        return res
+
+    def visit_Tuple(self, node):
+        self.generic_visit(node)
+        n = node.elts
+        return ("tuple", *zip(n[0::2], n[1::2]))
+
+    def visit_Name(self, node):
+        return ("name", node.id)
+
+    def visit_Constant(self, node):
+        return ("constant", node.value)
+
+    def visit_Starred(self, node):
+        self.generic_visit(node)
+        return ("starred", node.value)
+
+    def visit_List(self, node):
+        self.generic_visit(node)
+        if len(node.elts) == 0:
+            return ("empty", None)
+        return ("list", node.elts)
+
+def _get(a, attr):
+    try:
+        return a[attr]
+        return getattr(a, attr)
+    except:
+        pass
+
+class get:
+    def __init__(self, attr):
+        self.attr = attr
+
+    def __rlshift__(self, other):
+        return _get(other, self.attr)
+
+
+def unify_call(value, fname, args, kwargs, *, locals_={}):
+    captured_args = {}
+    # F(a=b)      |> isinstance(value, F) and hasattr(value, a) and getattr(value, a) == b
+    # F(a=B)      |> isinstance(value, F) and hasattr(value, a) and isinstance(getattr(value, a), B) and B
+    # F(a=B(c=d)) |> isinstance(value, F) and getattr(value, a) and isinstance(getattr(value, a), B) and
+    if value is None:
+        return None
+
+    klass = locals_.get(fname)
+    if klass is None:
+        print(f"Can't find class {fname} in locals", file=sys.stderr)
+        return None
+
+    if not isinstance(value, klass):
+        return None
+
+    for a in args:
+        # Test F(a) |> getattr(F(), a)
+        if (attr := getattr(value, a, None)) is not None:
+            captured_args.update({ a: attr })
+        else:
+            return None
+
+    for k, v  in kwargs.items():
+        token, *args = v
+        if token == "call": # in F(a=B(c=d)) we are in B
+            token, fname, args, kwargs = v
+            if (u := unify_call(getattr(value, k, None), fname, args, kwargs, locals_=locals_)) is not None:
+                captured_args.update(u)
+            else:
+                return None
+        elif token == "constant":
+            if (attr := getattr(value, k, None)) is not None and attr != args[0]:
+                return None
+
+    return captured_args
+
+def unify_tuple(value, tree, s, *, locals_={}):
+    capt_vars = {}
+
+    if not isinstance(value, Iterable):
+        return None
+
+    if isinstance(value, (list, tuple)):
+        value = iter(value)
+
+    for i, (token, tk_value) in enumerate(tree[1:]):
+        if token == "name":
+            if (v := next(value, None)) is not None:
+                if tk_value != "_":
+                    capt_vars.update({ tk_value: v })
+            else:
+                return None
+        elif token == "starred":
+            capt_vars.update({ tk_value[1]: list(value) })
+        elif token == "constant":
+            if next(value, None) != tk_value:
+                return None
+    return { **s, **capt_vars }
+
+
 def unify(value, pattern, s={}, *, locals_={}):
     from collections.abc import Iterable
     from ast import Tuple
+    import re
 
-    if type(value) == type(pattern):
-        if value == pattern:
-            return {**s}
+    # unify variables "x"
+    tree = SimplifyVisitor().visit(e(pattern))
+    token, *args = tree
+    if token == "name":
+        return { **s , args[0]: value }
+    elif token == "call":
+        fname, args, kwargs = args
+        if (res := unify_call(value, fname, args, kwargs, locals_=locals_)) is not None:
+            return { **s, **res }
         else:
             return None
-    elif isinstance(pattern, str):
-        import re
-
-        __import__('pdb').set_trace()
-        # unify variables "x"
-        if match := re.match(r"^[a-z]$", pattern):
-            return { **s , match.group(0): value }
-        elif match := re.match(r"^([a-z]+)\(([^,]+(,[^,]*))\)$", pattern):
-            print("class match union")
-            return { **s, match.group(0): value }
-
-    elif (
-        isinstance(value, Name)
-        and isinstance(pattern, Constant)
-        and locals_.get(value.id) == pattern.value
-    ):
-        return {**s}
-    elif isinstance(pattern, Name):
-        if isinstance(value, Name):
-            return {**s, pattern.id: value.id }
-        elif isinstance(value, Constant):
-            return {**s, pattern.id: value.value }
-        else:
-            return {**s, pattern.id: value }
-    elif (
-        isinstance(value, Constant)
-        and isinstance(pattern, Constant)
-        and value.value == pattern.value
-    ):
-        return {**s}
-    elif (
-        isinstance(pattern, Tuple)
-        and isinstance(value, Tuple)
-        and len(pattern.elts) == len(value.elts)
-    ):
-        tmp = {}
-        for a, b in zip(value.elts, pattern.elts):
-            res = unify(a, b, s)
-            if res is None:
-                return None
-            else:
-                tmp.update(res)
-        return tmp
-    elif isinstance(pattern, Call):
-        klass_name = pattern.func.id
-        klass = locals_.get(klass_name)
-        if klass is None:
+    elif token == "tuple":
+        return unify_tuple(value, tree, s, locals_=locals_)
+    elif token == "empty":
+        if next(iter(value), None) is not None:
             return None
-
-        elif isinstance(value, Constant):
-            if (
-                getattr(value, pattern.keywords[0].arg)
-                == pattern.keywords[0].value.value
-            ):
-                return {**s, pattern.keywords[0].arg: value.value}
-            else:
-                return None
-
-        elif isinstance(value, Name):
-            return {
-                **s,
-                pattern.keywords[0].value.id: e(
-                    repr(getattr(locals_.get(value.id), pattern.keywords[0].arg))
-                ),
-            }
-    elif isinstance(pattern, Constant):
-        if pattern.value == value:
+        else:
             return { **s }
-    else:
-        return None  # unify faile:
+    elif token == "constant":
+        if value == args[0]:
+            return { **s }
+        else:
+            return None
 
 
 # print(Let().let(a=const(1)).nin(e("a + 1")).eval())
