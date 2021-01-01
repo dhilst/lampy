@@ -151,14 +151,23 @@ def astasdict(it):
     return dict(it)
 
 
-def match(name, *patterns: Iterator[Tuple[str, AST]], locals_=None):
+def match(value, *patterns: Iterator[Tuple[str, AST]], locals_=None):
     if locals_ is None:
         import inspect
         locals_ = inspect.currentframe().f_back.f_locals
+
+    from enum import Enum
+    if isinstance(value, Enum):
+        enums_in_pattern = {getattribute(p[0], locals_=locals_) for p in patterns}
+        all_enums = {*iter(value.__class__)}
+        sub = all_enums.difference(enums_in_pattern)
+        if not any(p[0] == "_" for p in patterns) and len(sub) != 0:
+            raise TypeError(f"Not exaustive match on Enum class {value.__class__.__name__} not handling {sub} for example")
+
     for m, expr in patterns:
         if m == "_":
             return expr()
-        union = unify(name, m, locals_=locals_)
+        union = unify(value, m, locals_=locals_)
         if union is not None:
             if callable(expr):
                 expr = expr(**union)
@@ -214,6 +223,16 @@ class SimplifyVisitor(NodeTransformer):
             return ("empty", None)
         return ("list", node.elts)
 
+    def visit_Attribute(self, node):
+        from ast import Attribute
+
+        def f(node):
+            if isinstance(node.value, Attribute):
+                return f(node.value) + f".{node.attr}"
+            return f"{node.value.id}.{node.attr}"
+        res = ("attribute", f(node))
+        return res
+
 def _get(a, attr):
     try:
         return a[attr]
@@ -222,6 +241,12 @@ def _get(a, attr):
         pass
 
 class get:
+    """
+    >>> [1] << get(0) == 1
+    ... True
+    >>> type("Foo", tuple(), {"foo": 1}) << get("foo") == 1
+    ... True
+    """
     def __init__(self, attr):
         self.attr = attr
 
@@ -289,6 +314,13 @@ def unify_tuple(value, tree, s, *, locals_={}):
                 return None
     return { **s, **capt_vars }
 
+def getattribute(attribute: str, *, locals_):
+    first, *names = attribute.split('.')
+    obj = locals_.get(first)
+    for n in names:
+        if (obj := getattr(obj, n, None)) is not None:
+            return obj
+
 
 def unify(value, pattern, s={}, *, locals_={}):
     from collections.abc import Iterable
@@ -315,6 +347,12 @@ def unify(value, pattern, s={}, *, locals_={}):
             return { **s }
     elif token == "constant":
         if value == args[0]:
+            return { **s }
+        else:
+            return None
+    elif token == "attribute":
+        obj = getattribute(tree[1], locals_=locals_)
+        if obj == value:
             return { **s }
         else:
             return None
