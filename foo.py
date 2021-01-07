@@ -6,5 +6,5 @@
 #
 
 
-let def fact a in let match a in 0 => 1 | n => n + 1 end in
-    print(fact(5))
+let a = (1,2,3) in
+    print(a)

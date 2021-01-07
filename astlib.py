@@ -154,15 +154,19 @@ def astasdict(it):
 def match(value, *patterns: Iterator[Tuple[str, AST]], locals_=None):
     if locals_ is None:
         import inspect
+
         locals_ = inspect.currentframe().f_back.f_locals
 
     from enum import Enum
+
     if isinstance(value, Enum):
         enums_in_pattern = {getattribute(p[0], locals_=locals_) for p in patterns}
         all_enums = {*iter(value.__class__)}
         sub = all_enums.difference(enums_in_pattern)
         if not any(p[0] == "_" for p in patterns) and len(sub) != 0:
-            raise TypeError(f"Not exaustive match on Enum class {value.__class__.__name__} not handling {sub} for example")
+            raise TypeError(
+                f"Not exaustive match on Enum class {value.__class__.__name__} not handling {sub} for example"
+            )
 
     for m, expr in patterns:
         if m == "_":
@@ -174,8 +178,11 @@ def match(value, *patterns: Iterator[Tuple[str, AST]], locals_=None):
             elif isinstance(expr, str):
                 expr = lazy(repr(expr))
             elif hasattr(expr, "eval"):
-                union = { k: lazy(repr(v)) if not isinstance(k, AST) else v for k, v in union.items() }
-                expr = expr.eval(**{ **locals_, **union })
+                union = {
+                    k: lazy(repr(v)) if not isinstance(k, AST) else v
+                    for k, v in union.items()
+                }
+                expr = expr.eval(**{**locals_, **union})
 
             return expr
 
@@ -196,10 +203,17 @@ def attrs(obj, *attrs):
 
 
 class SimplifyVisitor(NodeTransformer):
-
     def visit_Call(self, node):
         self.generic_visit(node)
-        res = ("call", node.func[1], tuple(attrs(b, "value", "id") for a, b in zip(node.args[0::2], node.args[1::2])), { k.arg: attrs(k.value, "value", "id") for k in node.keywords })
+        res = (
+            "call",
+            node.func[1],
+            tuple(
+                attrs(b, "value", "id")
+                for a, b in zip(node.args[0::2], node.args[1::2])
+            ),
+            {k.arg: attrs(k.value, "value", "id") for k in node.keywords},
+        )
         return res
 
     def visit_Tuple(self, node):
@@ -230,15 +244,21 @@ class SimplifyVisitor(NodeTransformer):
             if isinstance(node.value, Attribute):
                 return f(node.value) + f".{node.attr}"
             return f"{node.value.id}.{node.attr}"
+
         res = ("attribute", f(node))
         return res
+
 
 def _get(a, attr):
     try:
         return a[attr]
+    except:
+        pass
+    try:
         return getattr(a, attr)
     except:
         pass
+
 
 class get:
     """
@@ -246,7 +266,10 @@ class get:
     ... True
     >>> type("Foo", tuple(), {"foo": 1}) << get("foo") == 1
     ... True
+
+    >>> type("Bar", tuple(), {"bar": 1}) << get("bar") == 1
     """
+
     def __init__(self, attr):
         self.attr = attr
 
@@ -273,15 +296,19 @@ def unify_call(value, fname, args, kwargs, *, locals_={}):
     for a in args:
         # Test F(a) |> getattr(F(), a)
         if (attr := getattr(value, a, None)) is not None:
-            captured_args.update({ a: attr })
+            captured_args.update({a: attr})
         else:
             return None
 
-    for k, v  in kwargs.items():
+    for k, v in kwargs.items():
         token, *args = v
-        if token == "call": # in F(a=B(c=d)) we are in B
+        if token == "call":  # in F(a=B(c=d)) we are in B
             token, fname, args, kwargs = v
-            if (u := unify_call(getattr(value, k, None), fname, args, kwargs, locals_=locals_)) is not None:
+            if (
+                u := unify_call(
+                    getattr(value, k, None), fname, args, kwargs, locals_=locals_
+                )
+            ) is not None:
                 captured_args.update(u)
             else:
                 return None
@@ -290,6 +317,7 @@ def unify_call(value, fname, args, kwargs, *, locals_={}):
                 return None
 
     return captured_args
+
 
 def unify_tuple(value, tree, s, *, locals_={}):
     capt_vars = {}
@@ -304,18 +332,19 @@ def unify_tuple(value, tree, s, *, locals_={}):
         if token == "name":
             if (v := next(value, None)) is not None:
                 if tk_value != "_":
-                    capt_vars.update({ tk_value: v })
+                    capt_vars.update({tk_value: v})
             else:
                 return None
         elif token == "starred":
-            capt_vars.update({ tk_value[1]: list(value) })
+            capt_vars.update({tk_value[1]: list(value)})
         elif token == "constant":
             if next(value, None) != tk_value:
                 return None
-    return { **s, **capt_vars }
+    return {**s, **capt_vars}
+
 
 def getattribute(attribute: str, *, locals_):
-    first, *names = attribute.split('.')
+    first, *names = attribute.split(".")
     obj = locals_.get(first)
     for n in names:
         if (obj := getattr(obj, n, None)) is not None:
@@ -331,11 +360,11 @@ def unify(value, pattern, s={}, *, locals_={}):
     tree = SimplifyVisitor().visit(e(pattern))
     token, *args = tree
     if token == "name":
-        return { **s , args[0]: value }
+        return {**s, args[0]: value}
     elif token == "call":
         fname, args, kwargs = args
         if (res := unify_call(value, fname, args, kwargs, locals_=locals_)) is not None:
-            return { **s, **res }
+            return {**s, **res}
         else:
             return None
     elif token == "tuple":
@@ -344,16 +373,16 @@ def unify(value, pattern, s={}, *, locals_={}):
         if next(iter(value), None) is not None:
             return None
         else:
-            return { **s }
+            return {**s}
     elif token == "constant":
         if value == args[0]:
-            return { **s }
+            return {**s}
         else:
             return None
     elif token == "attribute":
         obj = getattribute(tree[1], locals_=locals_)
         if obj == value:
-            return { **s }
+            return {**s}
         else:
             return None
 

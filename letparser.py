@@ -9,6 +9,8 @@ from collections import namedtuple
 
 from stackdict import StackDict
 
+from astlib import get, attrs
+
 LetToken = namedtuple("LetToken", "token value")
 
 Buffer = io.BufferedIOBase
@@ -34,11 +36,11 @@ grammar = r"""
     return : "return" let | yield
     yield  : "yield" let | let
 
-    tupleexpr : let "," (let ("," let)*)*
-
-    matchexpr : "let" "match" ID "in" pattern ("|" pattern)* "end"
-    pattern:  let "=>" let
-
+    matchexpr : "match" ID "with" ("|" pattern)+ "end"
+    pattern:  pattern_left ARROW let
+    !pattern_left : EMPTY | ID ("," "*"? ID)* | fqid "(" (arg|kwarg)* ")"
+    unpack: "*" ID
+|
     ?ifternary : let "if" boolexpr "else" let | boolexpr
 
     ?boolexpr : boolexpr BOOL_OP let | binopexpr
@@ -56,7 +58,7 @@ grammar = r"""
     MATH_UNARY : "+" | "-"
 
     ?comprehensions  : listcomp
-    !?listcomp        : "[" listcompexpr "]" | gencomp 
+    !?listcomp        : "[" listcompexpr "]" | gencomp
     !?gencomp         : "(" listcompexpr ")" | dictcomp
     !?dictcomp        : "{" dictcompexpr "}" | setcomp
     !?setcomp         : "{" listcompexpr "}" | call
@@ -69,22 +71,31 @@ grammar = r"""
 
     ?atom: "(" let ")" | const | fqid
 
-    const : bool | integer | dictconst | listconst | tupleconst | setconst | STRING_CONST 
-    dictconst : "{" let ":" let ("," let ":" let)* "}"
+    const : bool | integer | dictconst | listconst | tupleconst | setconst | NONE | STRING_CONST
+    dictconst : "{" atom ":" atom ("," atom ":" atom )* "}"
     listconst : "[" let ("," let)* "]"
-    ?tupleconst : atom "," atom+
+    tupleconst : "(" let "," (let | ("," let))* ")"
     setconst : "{" let ("," let)* "}"
     integer : /[+-]?\d+/ | /0x[a-fA-F]+/ | /0o[0-7]+/ | /0b[12]+/ | float
     float : /[+-]?\d+\.\d+/
 
+    NONE.10 : "None"
     STRING_CONST.5: STRING_MODIFIER? ESCAPED_STRING
 
     fqalias : fqid ("as" ID)?
     !relativeid : "."+ fqalias
     idalias : ID ("as" ID)?
-    fqid : ID ("." ID)+ | ID
+    fqid : ID ("." ID)*
     ID : CNAME
     STRING_MODIFIER.10 :  "f" | "r" | "b"
+    EMPTY.11 : "[]"
+    LBRAKET.5 : "["
+    RBRAKET.5 : "]"
+    LBRACE.5 : "{"
+    RBRACE.5 : "}"
+    LPAR.4 : "("
+    RPAR.4 : ")"
+
 
 
     %import common.WS
@@ -111,6 +122,7 @@ class Transmformator(LarkTransformer):
     def relativeid(self, tree):
         from ast import alias
         from lark import Token
+
         res = []
         for t in tree:
             if isinstance(t, Token):
@@ -123,13 +135,16 @@ class Transmformator(LarkTransformer):
 
     def start(self, tree):
         from ast import Module, expr, Expr
-
-        stmts = [Expr(s) if isinstance(s, expr) else s for s in reversed(self.statements)]
+        stmts = [
+            Expr(s) if isinstance(s, expr) else s for s in reversed(self.statements)
+        ]
+        stmts.append(Expr(tree[0]))
         res = Module(body=stmts, type_ignores=[])
         return res
 
     def letimport(self, tree):
         from ast import Import, alias, expr, Expr
+
         *imps, cont = tree[0:-1], tree[-1]
         imps = imps[0]
         imp = Import(names=imps)
@@ -137,29 +152,44 @@ class Transmformator(LarkTransformer):
         self.statements.append(imp)
         return imp
 
+    def letargs(self, tree):
+        return let(tree[0])(tree[1])
+
     def matchexpr(self, tree):
         from ast import Name, Call, Load
+        import astlib
 
         name, patterns = tree[0].id, tree[1:]
-        return astlib.match(name, patterns)
+        return astlib.call("match", name, patterns)
 
     def pattern(self, tree):
-        def _f(value):
-            from ast import Constant, Name
-            from lark import Token, Tree
-            if isinstance(value, Token):
-                return value.value
-            elif isinstance(value, Tree):
-                return pattern(value.children[0])
-            else:
-                return value
-        t1, t2 = _f(tree[0]), _f(tree[1])
-        return t1, t2
+        return (tree[0], astlib.lamb()(tree[2]))
+
+    def pattern_left(self, tree):
+        from ast import Name
+        if tree[0] << get("type") == "EMPTY":
+            return "[]"
+        elif isinstance(tree[0], Name):
+            return "".join(attrs(t, "value", "id") for t in tree)
+        elif tree[0] << get("data") == "fqid":
+            print("is an arg")
+            args = []
+            for a in tree[0]:
+                if a << get("data") == "arg":
+                    args.append(a.children[0].id)
+                elif a << get("data") == "kwarg":
+                    args.append(f"{k}={v}" for k, v in a.items())
+            args = ", ".join(args)
+            return tree[0].unparse() + "(" + args + ")"
+        else:
+            print(f"wtf {tree}")
+            raise ValueError
 
 
     def letfromimport(self, tree):
         from ast import ImportFrom, alias, Attribute
         from lark import Tree
+
         def flat_attrs(attr):
             if isinstance(attr, str):
                 return attr
@@ -178,11 +208,14 @@ class Transmformator(LarkTransformer):
                     break
             return count
 
-        is_idalias = isinstance(tree[0], Tree) and tree[0].data == 'idalias'
+        is_idalias = isinstance(tree[0], Tree) and tree[0].data == "idalias"
         modfqname = flat_attrs(tree[0]) if not is_idalias else tree[0].children[0].id
-        aliases = [alias(a.children[0].id, a.children[1].id)
-                    if len(a.children) == 2 else alias(a.children[0].id) 
-                    for a in tree[1:-1]]
+        aliases = [
+            alias(a.children[0].id, a.children[1].id)
+            if len(a.children) == 2
+            else alias(a.children[0].id)
+            for a in tree[1:-1]
+        ]
         cont = tree[-1]
         level = count_dots(modfqname)
         fimp = ImportFrom(module=modfqname, names=aliases, level=level)
@@ -196,7 +229,7 @@ class Transmformator(LarkTransformer):
     def args(self, tree):
         return [t.children[0].id for t in tree]
 
-    def let(self, tree):
+    def letargs(self, tree):
         e = tree[1][0] if isinstance(tree[1], list) and len(tree[1]) >= 1 else tree[1]
         if isinstance(tree[0], dict):
             return astlib.let(**tree[0])(e)
@@ -204,6 +237,7 @@ class Transmformator(LarkTransformer):
 
     def fqalias(self, tree):
         from ast import alias
+
         name, *_alias = tree
         if _alias:
             return alias(name.id, _alias[0].id)
@@ -371,6 +405,9 @@ class Transmformator(LarkTransformer):
     def const(self, tree):
         return tree[0]
 
+    def NONE(self, token):
+        return astlib.lazy("None")
+
     def signed_number(self, tree):
         return astlib.const(float(tree[0].value))
 
@@ -393,3 +430,23 @@ class Transmformator(LarkTransformer):
             return astlib.e("False")
         else:
             raise ValueError(f"{tree[0]} is not true|false")
+
+    def listconst(self, tree):
+        from ast import List,Load
+        __import__('pdb').set_trace()
+        return List(elts=tree, ctx=Load())
+
+    def tupleconst(self, tree):
+        from ast import Tuple ,Load
+        __import__('pdb').set_trace()
+        return Tuple(elts=tree, ctx=Load())
+
+    def dictconst(self, tree):
+        from ast import Dict,Load
+        keys = tree[0::2]
+        values = tree[1::2]
+        return Dict(keys, values)
+
+    def STRING_CONST(self, tree):
+        from ast import Constant
+        return Constant("".join(c for c in tree.value if c not in ("'", '"')))
