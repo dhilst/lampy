@@ -36,11 +36,11 @@ grammar = r"""
     return : "return" let | yield
     yield  : "yield" let | let
 
-    matchexpr : "match" ID "with" ("|" pattern)+ "end"
+    matchexpr : "match" atom "with" ("|" pattern)+ "end"
     pattern:  pattern_left ARROW let
-    !pattern_left : EMPTY | ID ("," "*"? ID)* | fqid "(" (arg|kwarg)* ")"
+    !pattern_left : EMPTY | const | ID ("," "*"? ID)* | fqid "(" (arg|kwarg)* ")"
     unpack: "*" ID
-|
+
     ?ifternary : let "if" boolexpr "else" let | boolexpr
 
     ?boolexpr : boolexpr BOOL_OP let | binopexpr
@@ -66,7 +66,8 @@ grammar = r"""
     dictcompexpr     : let ":" let "for" (ID ("," ID)*) "in" let ("if" boolexpr ("," "if" boolexpr)*)?
 
 
-    ?call: atom callargs+ | atom
+    ?call: atom callargs+ | subscript
+    ?subscript : atom "[" let "]" | atom
     callargs : "(" (let ("," let)* )* ")"
 
     ?atom: "(" let ")" | const | fqid
@@ -112,13 +113,20 @@ let_parser = Lark(grammar, parser="lalr")
 
 
 def parse(input_):
+    import os
     res = let_parser.parse(input_)
     res = Transmformator().transform(res)
-    res.dump()
+
+    if "DUMP_AST" in os.environ:
+        res.dump()
     return res
 
 
 class Transmformator(LarkTransformer):
+    def subscript(self, tree):
+        from ast import Subscript, Load
+        return Subscript(tree[0], tree[1], Load())
+
     def relativeid(self, tree):
         from ast import alias
         from lark import Token
@@ -156,21 +164,24 @@ class Transmformator(LarkTransformer):
         return let(tree[0])(tree[1])
 
     def matchexpr(self, tree):
-        from ast import Name, Call, Load
+        from ast import Name, Call, Load, Tuple
         import astlib
 
-        name, patterns = tree[0].id, tree[1:]
-        return astlib.call("match", name, patterns)
+        name, patterns = tree[0], tree[1:]
+        __import__('pdb').set_trace()
+        patterns = [Tuple(elts=[astlib.lazy(repr(p[0]) if not isinstance(p[0], str) else p[0]), p[1]], ctx=Load()) for p in patterns]
+        res = Call(Name("match", Load()), [name] + patterns, [])
+        return res
 
     def pattern(self, tree):
         return (tree[0], astlib.lamb()(tree[2]))
 
     def pattern_left(self, tree):
-        from ast import Name
+        from ast import Name, Constant
         if tree[0] << get("type") == "EMPTY":
             return "[]"
-        elif isinstance(tree[0], Name):
-            return "".join(attrs(t, "value", "id") for t in tree)
+        elif isinstance(tree[0], (Name, Constant)):
+            return "".join(str(attrs(t, "value", "id")) for t in tree)
         elif tree[0] << get("data") == "fqid":
             print("is an arg")
             args = []
@@ -182,7 +193,6 @@ class Transmformator(LarkTransformer):
             args = ", ".join(args)
             return tree[0].unparse() + "(" + args + ")"
         else:
-            print(f"wtf {tree}")
             raise ValueError
 
 
@@ -360,7 +370,7 @@ class Transmformator(LarkTransformer):
         return tree
 
     def callargs(self, tree):
-        if isinstance(tree[0], list):
+        if len(tree) == 1 and isinstance(tree[0], list):
             return tree[0]
         return tree
 
@@ -433,12 +443,10 @@ class Transmformator(LarkTransformer):
 
     def listconst(self, tree):
         from ast import List,Load
-        __import__('pdb').set_trace()
         return List(elts=tree, ctx=Load())
 
     def tupleconst(self, tree):
         from ast import Tuple ,Load
-        __import__('pdb').set_trace()
         return Tuple(elts=tree, ctx=Load())
 
     def dictconst(self, tree):

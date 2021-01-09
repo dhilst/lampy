@@ -4,6 +4,8 @@ from ast import parse, fix_missing_locations, Expression, NodeTransformer, parse
 from astlib import lazy, unify, match
 from letast import matchdec
 
+assert match("1", ("'1'", lambda : "one")) == "one"
+
 def sum(*values):
     return match(values,
             ("[]", lambda: 0),
@@ -73,3 +75,5 @@ try:
             )
 except TypeError as e: # because match is not exaustive
     print(e)
+
+

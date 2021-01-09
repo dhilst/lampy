@@ -3,4 +3,6 @@ import sys
 from letparser import parse
 
 if __name__ == "__main__":
-    parse(open(sys.argv[1]).read()).eval()
+    f = sys.argv[1]
+    sys.argv = sys.argv[1:]
+    parse(open(f).read()).eval()
