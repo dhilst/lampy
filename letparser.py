@@ -117,6 +117,7 @@ def parse(input_):
     res = let_parser.parse(input_)
     res = Transmformator().transform(res)
 
+    __import__('pdb').set_trace()
     if "DUMP_AST" in os.environ:
         res.dump()
     return res
@@ -168,8 +169,7 @@ class Transmformator(LarkTransformer):
         import astlib
 
         name, patterns = tree[0], tree[1:]
-        __import__('pdb').set_trace()
-        patterns = [Tuple(elts=[astlib.lazy(repr(p[0]) if not isinstance(p[0], str) else p[0]), p[1]], ctx=Load()) for p in patterns]
+        patterns = [Tuple(elts=[astlib.lazy(p[0]), p[1]], ctx=Load()) for p in patterns]
         res = Call(Name("match", Load()), [name] + patterns, [])
         return res
 
@@ -181,7 +181,7 @@ class Transmformator(LarkTransformer):
         if tree[0] << get("type") == "EMPTY":
             return "[]"
         elif isinstance(tree[0], (Name, Constant)):
-            return "".join(str(attrs(t, "value", "id")) for t in tree)
+            return "".join(repr(attrs(t, "value", "id")) for t in tree)
         elif tree[0] << get("data") == "fqid":
             print("is an arg")
             args = []

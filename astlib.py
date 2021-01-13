@@ -24,6 +24,7 @@ from ast import (
     Expression,
     fix_missing_locations,
     keyword,
+    expr,
     dump,
 )
 from functools import partial
@@ -32,9 +33,19 @@ dump = partial(dump, indent=4)
 
 AST.dump = lambda self: print(dump(self))  # type: ignore
 AST.eval = lambda self, **kwargs: _eval(self, **kwargs)  # type: ignore
+AST.exec = lambda self, **kwargs: _exec(self, **kwargs)
 AST.compile = lambda self, **kwargs: _compile(self, **kwargs)  # type: ignore
 AST.unparse = lambda self, **kwargs: unparse(self, **kwargs)  # type: ignore
 
+
+def _exec(e, **kwargs):
+    if kwargs:
+        e = call(lamb(*kwargs.keys())(e), **kwargs)
+
+    if not isinstance(e, Module):
+        e = m(e)
+
+    return exec(compile(fix_missing_locations(e), "<string>", "exec"))
 
 def _compile(e, **kwargs):
     if kwargs:
@@ -45,7 +56,9 @@ def _compile(e, **kwargs):
     else:
         mode = "eval"
         e = Expression(e)
-    return compile(fix_missing_locations(e), "<string>", mode)
+    e = fix_missing_locations(e)
+    print("_compile", e)
+    return compile(e, "<string>", mode)
 
 
 def _eval(e, **kwargs):
