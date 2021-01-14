@@ -275,11 +275,12 @@ def _get(a, attr):
 class get:
     """
     >>> [1] << get(0) == 1
-    ... True
+    True
     >>> type("Foo", tuple(), {"foo": 1}) << get("foo") == 1
-    ... True
+    True
 
     >>> type("Bar", tuple(), {"bar": 1}) << get("bar") == 1
+    True
     """
 
     def __init__(self, attr):
@@ -387,7 +388,7 @@ def unify(value, pattern, s={}, *, locals_={}):
         else:
             return {**s}
     elif token == "constant":
-        if value == pattern:
+        if value == args[0]:
             return {**s}
         else:
             return None

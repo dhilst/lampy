@@ -6,11 +6,11 @@ import unittest
 from lampy import lampy, utils, parser, tlampy, tparser
 
 
-def load_tests(loader, tests, ignore):
-    tests.addTests(doctest.DocTestSuite(tlampy))
-    tests.addTests(doctest.DocTestSuite(lampy))
-    tests.addTests(doctest.DocTestSuite(utils))
-    return tests
+#def load_tests(loader, tests, ignore):
+#    tests.addTests(doctest.DocTestSuite(tlampy))
+#    tests.addTests(doctest.DocTestSuite(lampy))
+#    tests.addTests(doctest.DocTestSuite(utils))
+#    return tests
 
 
 class Test(unittest.TestCase):
@@ -31,8 +31,6 @@ class Test(unittest.TestCase):
         self.assertEqual(9, e("((a) => a + 10) 1 - 2;").val)
 
         # print(e("((f) => ((x) => f (x x))((x) => f (x x))) 1;"))
-
-        (lambda f : ( lambda x : f(x(x)) )( lambda x : f(x(x)) ))(lambda x : x)
 
     def test_tparser(self):
         def e(input_, _trace=False):
@@ -101,6 +99,3 @@ class Test(unittest.TestCase):
                 )[0].root.typ
             ),
         )
-
-
-

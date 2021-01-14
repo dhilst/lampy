@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import sys
-from letparser import parse
-import astlib
+from lampy.letparser import parse
+from lampy import astlib
 
 if __name__ == "__main__":
     f = sys.argv[1]

@@ -18,8 +18,8 @@ from ast import (
     dump,
 )
 
-from astlib import call, arguments, let, lamb, arguments, keywords, Let
-from astlib import arguments as create_args
+from lampy.astlib import call, arguments, let, lamb, arguments, keywords, Let
+from lampy.astlib import arguments as create_args
 
 
 def create_let_lamb(call, body):

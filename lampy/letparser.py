@@ -1,17 +1,13 @@
-# HEADNOTE: THIS NEED A FUCKING REFACTOR AND TESTS
-
 import re
 import io
-import astlib
+from lampy import astlib
 from collections.abc import Iterable
 from lark import Lark, Transformer as LarkTransformer, Token
 from typing import *
 from functools import wraps
 from collections import namedtuple
 
-from stackdict import StackDict
-
-from astlib import get, attrs
+from lampy.astlib import get, attrs
 
 LetToken = namedtuple("LetToken", "token value")
 
