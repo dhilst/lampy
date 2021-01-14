@@ -19,85 +19,84 @@ RegexResult = tuple[re.Match, Buffer, callable]
 Token = tuple[str, str]  # (type, value)
 
 grammar = r"""
-    start : let
-    ?let : letargs | letdef | letimport | expr
-    letargs : "let" (args|kwargs) "in" let
-    letdef : "let" "def" ID ID* "in" expr "in" let
-    ?letimport : "let" "import" fqalias ("," fqalias)* "in" let | letfromimport
-    letfromimport : "let" "from" relativeid "import" idalias ("," idalias)* "in" let
+    start           : let
+    ?let            : letargs | letdef | letimport | expr
+    letargs         : "let" (args|kwargs) "in" let
+    letdef          : "let" "def" ID ID* "=" expr "in" let
+    ?letimport      : "let" "import" fqalias ("," fqalias)* "in" let | letfromimport
+    letfromimport   : "let" "from" relativeid "import" idalias ("," idalias)* "in" let
 
-    args : arg+
-    kwargs : kwarg+
-    arg : ID
-    kwarg : arg "=" let
-    ?expr : doblock | matchexpr | ifternary
+    args    : arg+
+    kwargs  : kwarg+
+    arg     : ID
+    kwarg   : arg "=" let
+    ?expr   : doblock | matchexpr | ifternary
 
-    ?doblock : "do" let (";" return )* "end"
-    return : "return" let | yield
-    yield  : "yield" let | let
+    ?doblock    : "do" let (";" return )* "end"
+    return      : "return" let | yield
+    yield       : "yield" let | let
 
-    matchexpr : "match" atom "with" ("|" pattern)+ "end"
-    pattern:  pattern_left ARROW let
-    !pattern_left : EMPTY | const | ID ("," "*"? ID)* | fqid "(" (arg|kwarg)* ")"
-    unpack: "*" ID
+    matchexpr       : "match" atom "with" ("|" pattern)+ "end"
+    pattern         :  pattern_left ARROW let
+    !pattern_left   : EMPTY | ID ("," "*"? ID)* | fqid "(" (arg|kwarg)* ")" | const
+    unpack          : "*" ID
 
-    ?ifternary : let "if" boolexpr "else" let | boolexpr
+    ?ifternary  : let "if" boolexpr "else" let | boolexpr
 
-    ?boolexpr : boolexpr BOOL_OP let | binopexpr
-    bool : BOOL
-    BOOL_OP : "==" | ">=" | ">" | "<" | "<=" | "or" | "and" | "not"
-    BOOL : "True" | "False"
-    ARROW.10 : "=>"
+    ?boolexpr   : boolexpr BOOL_OP let | binopexpr
+    bool        : BOOL
 
-    ?binopexpr : binopexpr MATH_PLUS mulexpr | mulexpr
-    ?mulexpr : mulexpr MATH_MUL powexpr | powexpr
-    ?powexpr : integer MATH_POW powexpr | comprehensions
-    MATH_PLUS: "+" | "-"
-    MATH_MUL : /\*[^*]/ | "//" | "/" | "%"
-    MATH_POW: "**"
-    MATH_UNARY : "+" | "-"
+    ?binopexpr  : binopexpr MATH_PLUS mulexpr | mulexpr
+    ?mulexpr    : mulexpr MATH_MUL powexpr | powexpr
+    ?powexpr    : integer MATH_POW powexpr | comprehensions
 
     ?comprehensions  : listcomp
-    !?listcomp        : "[" listcompexpr "]" | gencomp
-    !?gencomp         : "(" listcompexpr ")" | dictcomp
-    !?dictcomp        : "{" dictcompexpr "}" | setcomp
-    !?setcomp         : "{" listcompexpr "}" | call
-    listcompexpr     : let         "for" (ID ("," ID)*) "in" let ("if" boolexpr ("," "if" boolexpr)*)?
+    !?listcomp       : "[" listcompexpr "]" | gencomp
+    !?gencomp        : "(" listcompexpr ")" | dictcomp
+    !?dictcomp       : "{" dictcompexpr "}" | setcomp
+    !?setcomp        : "{" listcompexpr "}" | call
+    listcompexpr     : let "for" (ID ("," ID)*) "in" let ("if" boolexpr ("," "if" boolexpr)*)?
     dictcompexpr     : let ":" let "for" (ID ("," ID)*) "in" let ("if" boolexpr ("," "if" boolexpr)*)?
 
+    ?call       : atom callargs+ | subscript
+    ?subscript  : atom "[" let "]" | atom
+    callargs    : "(" (let ("," let)* )* ")"
 
-    ?call: atom callargs+ | subscript
-    ?subscript : atom "[" let "]" | atom
-    callargs : "(" (let ("," let)* )* ")"
+    ?atom       : "(" let ")" | const | fqid
 
-    ?atom: "(" let ")" | const | fqid
+    const       : bool | integer | dictconst | listconst | tupleconst 
+                | setconst | NONE | STRING_CONST
+    dictconst   : "{" atom ":" atom ("," atom ":" atom )* "}"
+    listconst   : "[" let ("," let)* "]"
+    tupleconst  : "(" let "," (let | ("," let))* ")"
+    setconst    : "{" let ("," let)* "}"
+    integer     : /[+-]?\d+/ | /0x[a-fA-F]+/ | /0o[0-7]+/ | /0b[12]+/ | float
+    float       : /[+-]?\d+\.\d+/
 
-    const : bool | integer | dictconst | listconst | tupleconst | setconst | NONE | STRING_CONST
-    dictconst : "{" atom ":" atom ("," atom ":" atom )* "}"
-    listconst : "[" let ("," let)* "]"
-    tupleconst : "(" let "," (let | ("," let))* ")"
-    setconst : "{" let ("," let)* "}"
-    integer : /[+-]?\d+/ | /0x[a-fA-F]+/ | /0o[0-7]+/ | /0b[12]+/ | float
-    float : /[+-]?\d+\.\d+/
-
-    NONE.10 : "None"
-    STRING_CONST.5: STRING_MODIFIER? ESCAPED_STRING
-
-    fqalias : fqid ("as" ID)?
+    fqalias     : fqid ("as" ID)?
     !relativeid : "."+ fqalias
-    idalias : ID ("as" ID)?
-    fqid : ID ("." ID)*
-    ID : CNAME
-    STRING_MODIFIER.10 :  "f" | "r" | "b"
-    EMPTY.11 : "[]"
-    LBRAKET.5 : "["
-    RBRAKET.5 : "]"
-    LBRACE.5 : "{"
-    RBRACE.5 : "}"
-    LPAR.4 : "("
-    RPAR.4 : ")"
+    idalias     : ID ("as" ID)?
+    fqid        : ID ("." ID)*
 
-
+    ID                  : CNAME
+    STRING_MODIFIER.10  :  "f" | "r" | "b"
+    EMPTY.11            : "[]"
+    LBRAKET.5           : "["
+    RBRAKET.5           : "]"
+    LBRACE.5            : "{"
+    RBRACE.5            : "}"
+    LPAR.4              : "("
+    RPAR.4              : ")"
+    NONE.10             : "None"
+    STRING_CONST.5      : STRING_MODIFIER? ESCAPED_STRING
+    MATH_PLUS           : "+" | "-"
+    MATH_MUL            : /\*[^*]/ | "//" | "/" | "%"
+    MATH_POW            : "**"
+    MATH_UNARY          : "+" | "-"
+    BOOL_OP.5           : "==" | ">=" | ">" | "<" | "<=" | "or" | "and" | "not"
+    BOOL.10             : "True" | "False"
+    ARROW.10            : "=>"
+    EQUAL.10            : "="
 
     %import common.WS
     %import common.ESCAPED_STRING
@@ -115,11 +114,17 @@ let_parser = Lark(grammar, parser="lalr")
 def parse(input_):
     import os
     res = let_parser.parse(input_)
+
+    if "DUMP_CT" in os.environ:
+        print(res.pretty())
+
     res = Transmformator().transform(res)
 
-    __import__('pdb').set_trace()
     if "DUMP_AST" in os.environ:
         res.dump()
+    if "DUMP_UNPARSE" in os.environ:
+        import ast
+        print(ast.unparse(res))
     return res
 
 
@@ -174,16 +179,21 @@ class Transmformator(LarkTransformer):
         return res
 
     def pattern(self, tree):
+        from ast import Name
+        if isinstance(tree[0], Name):
+            return (repr(tree[0].id), astlib.lamb(tree[0].id)(tree[2]))
         return (tree[0], astlib.lamb()(tree[2]))
 
     def pattern_left(self, tree):
+        __import__('pdb').set_trace()
         from ast import Name, Constant
         if tree[0] << get("type") == "EMPTY":
             return "[]"
-        elif isinstance(tree[0], (Name, Constant)):
-            return "".join(repr(attrs(t, "value", "id")) for t in tree)
+        elif isinstance(tree[0], Constant):
+            return repr(tree[0].value)
+        elif isinstance(tree[0], Name):
+            return tree[0]
         elif tree[0] << get("data") == "fqid":
-            print("is an arg")
             args = []
             for a in tree[0]:
                 if a << get("data") == "arg":

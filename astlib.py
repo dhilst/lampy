@@ -38,14 +38,14 @@ AST.compile = lambda self, **kwargs: _compile(self, **kwargs)  # type: ignore
 AST.unparse = lambda self, **kwargs: unparse(self, **kwargs)  # type: ignore
 
 
-def _exec(e, **kwargs):
+def _exec(e, globals={}, locals={}, **kwargs):
     if kwargs:
         e = call(lamb(*kwargs.keys())(e), **kwargs)
 
     if not isinstance(e, Module):
         e = m(e)
 
-    return exec(compile(fix_missing_locations(e), "<string>", "exec"))
+    return exec(compile(fix_missing_locations(e), "<string>", "exec"), globals, locals)
 
 def _compile(e, **kwargs):
     if kwargs:
@@ -57,12 +57,11 @@ def _compile(e, **kwargs):
         mode = "eval"
         e = Expression(e)
     e = fix_missing_locations(e)
-    print("_compile", e)
     return compile(e, "<string>", mode)
 
 
-def _eval(e, **kwargs):
-    return eval(_compile(e, **kwargs))
+def _eval(e, globals={}, locals={}, **kwargs):
+    return eval(_compile(e, **kwargs), globals, locals)
 
 
 def arguments(
@@ -370,7 +369,7 @@ def unify(value, pattern, s={}, *, locals_={}):
     import re
 
     # unify variables "x"
-    tree = SimplifyVisitor().visit(e(pattern))
+    tree = SimplifyVisitor().visit(e(pattern if isinstance(pattern, str) else repr(pattern)))
     token, *args = tree
     if token == "name":
         return {**s, args[0]: value}
@@ -388,7 +387,7 @@ def unify(value, pattern, s={}, *, locals_={}):
         else:
             return {**s}
     elif token == "constant":
-        if value == args[0]:
+        if value == pattern:
             return {**s}
         else:
             return None

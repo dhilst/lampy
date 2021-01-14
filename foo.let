@@ -1,5 +1,5 @@
 #!//Users/gecko/code/lampycode/let.py
 
-match (sys.argv[1]) with
-  | 1 => print("one")
+match ([1,2]) with
+  | a, *b => print(a)
 end

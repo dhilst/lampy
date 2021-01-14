@@ -4,6 +4,7 @@ from ast import parse, fix_missing_locations, Expression, NodeTransformer, parse
 from astlib import lazy, unify, match
 from letast import matchdec
 
+assert match("whaever", ("_", lambda : "anything")) == "anything"
 assert match("1", ("'1'", lambda : "one")) == "one"
 
 def sum(*values):

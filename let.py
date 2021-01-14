@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 import sys
 from letparser import parse
-from astlib import match
+import astlib
 
 if __name__ == "__main__":
     f = sys.argv[1]
     sys.argv = sys.argv[1:]
-    parse(open(f).read()).eval()
+    globals_ = {
+        'match': astlib.match,
+        '_': None,
+    }
+    parse(open(f).read()).eval(globals=globals_)
