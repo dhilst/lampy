@@ -1,3 +1,5 @@
+# HEADNOTE: THIS NEED A FUCKING REFACTOR AND TESTS
+
 import re
 import io
 import astlib
@@ -185,7 +187,6 @@ class Transmformator(LarkTransformer):
         return (tree[0], astlib.lamb()(tree[2]))
 
     def pattern_left(self, tree):
-        __import__('pdb').set_trace()
         from ast import Name, Constant
         if tree[0] << get("type") == "EMPTY":
             return "[]"
