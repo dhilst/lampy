@@ -1,4 +1,4 @@
-#!//Users/gecko/code/lampycode/let.py
+#!//Users/gecko/code/lampycode/lampy/let.py
 
 match ([1,2]) with
   | a, *b => print(a)
