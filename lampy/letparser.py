@@ -150,7 +150,7 @@ class Transmformator(LarkTransformer):
         stmts = [
             Expr(s) if isinstance(s, expr) else s for s in reversed(self.statements)
         ]
-        stmts.append(Expr(tree[0]))
+        #stmts.append(Expr(tree[0]))
         res = Module(body=stmts, type_ignores=[])
         return res
 
