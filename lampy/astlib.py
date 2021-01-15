@@ -31,11 +31,11 @@ from functools import partial
 
 dump = partial(dump, indent=4)
 
-AST.dump = lambda self: print(dump(self))  # type: ignore
-AST.eval = lambda self, **kwargs: _eval(self, **kwargs)  # type: ignore
-AST.exec = lambda self, **kwargs: _exec(self, **kwargs)
+AST.dump    = lambda self: print(dump(self))  # type: ignore
+AST.eval    = lambda self, **kwargs: _eval(self, **kwargs)  # type: ignore
+AST.exec    = lambda self, **kwargs: _exec(self, **kwargs)
 AST.compile = lambda self, **kwargs: _compile(self, **kwargs)  # type: ignore
-AST.unparse = lambda self, **kwargs: unparse(self, **kwargs)  # type: ignore
+AST.unparse = lambda self, **kwargs: unparse(fix_missing_locations(self), **kwargs)  # type: ignore
 
 
 def _exec(e, globals={}, locals={}, **kwargs):
@@ -59,8 +59,18 @@ def _compile(e, **kwargs):
     e = fix_missing_locations(e)
     return compile(e, "<string>", mode)
 
+def _let_eval(result):
+    _let_eval.result = result
 
 def _eval(e, globals={}, locals={}, **kwargs):
+    from ast import Module
+    if type(e) is Module:
+        lastexpr = e.body[-1]
+        lastexpr = getattr(lastexpr, "value", lastexpr)
+        e.body[-1] = Expr(call("_let_eval", lastexpr))
+        globals["_let_eval"] = _let_eval
+        eval(_compile(e, **kwargs), globals, locals)
+        return _let_eval.result
     return eval(_compile(e, **kwargs), globals, locals)
 
 

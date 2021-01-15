@@ -146,13 +146,13 @@ class Transmformator(LarkTransformer):
         return "".join(res)
 
     def start(self, tree):
-        from ast import Module, expr, Expr
+        from ast import Module, expr, Expr, Call, fix_missing_locations
         stmts = [
             Expr(s) if isinstance(s, expr) else s for s in reversed(self.statements)
         ]
-        #stmts.append(Expr(tree[0]))
-        res = Module(body=stmts, type_ignores=[])
-        return res
+        if not stmts:
+            stmts.append(tree[0])
+        return fix_missing_locations(Module(body=stmts, type_ignores=[]))
 
     def letimport(self, tree):
         from ast import Import, alias, expr, Expr
