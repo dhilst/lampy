@@ -358,7 +358,6 @@ class Transmformator(LarkTransformer):
 
     def boolexpr(self, tree):
         from ast import Compare
-
         return Compare(tree[0], [tree[1]], comparators=[tree[2]])
 
     def infix(self, tree):
@@ -387,9 +386,8 @@ class Transmformator(LarkTransformer):
         res = Call(tree[0], args=tree[1], keywords=[])
         return res
 
-    def BOOL_OP(selfm, tree):
+    def BOOL_OP(self, tree):
         from ast import (
-            BoolOp,
             Eq,
             NotEq,
             Lt,
@@ -402,7 +400,6 @@ class Transmformator(LarkTransformer):
             NotIn,
             Or,
             And,
-            Compare,
         )
 
         objmap = {
@@ -417,7 +414,7 @@ class Transmformator(LarkTransformer):
             "or": Or,
             "and": And,
         }
-        return nt("tokenv value op")(objmap[tree](), Compare)
+        return objmap[tree]()
 
     def const(self, tree):
         return tree[0]

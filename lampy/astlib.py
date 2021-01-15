@@ -56,7 +56,7 @@ def _compile(e, **kwargs):
     else:
         mode = "eval"
         e = Expression(e)
-    e = fix_missing_locations(e)
+    fix_missing_locations(e)
     return compile(e, "<string>", mode)
 
 def _let_eval(result):
