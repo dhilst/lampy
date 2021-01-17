@@ -62,16 +62,18 @@ def _compile(e, **kwargs):
 def _let_eval(result):
     _let_eval.result = result
 
-def _eval(e, globals={}, locals={}, **kwargs):
+def _eval(e, globals_={},  **kwargs):
     from ast import Module
     if type(e) is Module:
         lastexpr = e.body[-1]
         lastexpr = getattr(lastexpr, "value", lastexpr)
         e.body[-1] = Expr(call("_let_eval", lastexpr))
-        globals["_let_eval"] = _let_eval
-        eval(_compile(e, **kwargs), globals, locals)
+        globals_["_let_eval"] = _let_eval
+        globals_["match"] = match
+        globals_["_"] = None
+        exec(_compile(e, **kwargs), globals_)
         return _let_eval.result
-    return eval(_compile(e, **kwargs), globals, locals)
+    return eval(_compile(e, **kwargs), globals_)
 
 
 def arguments(

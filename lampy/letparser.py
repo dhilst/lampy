@@ -44,9 +44,9 @@ grammar = r"""
     ?boolexpr   : boolexpr BOOL_OP let | binopexpr
     bool        : BOOL
 
-    ?binopexpr  : binopexpr MATH_PLUS mulexpr | mulexpr
-    ?mulexpr    : mulexpr MATH_MUL powexpr | powexpr
-    ?powexpr    : integer MATH_POW powexpr | comprehensions
+    ?binopexpr  : binopexpr MATH_PLUS mulexpr -> infix | mulexpr
+    ?mulexpr    : mulexpr MATH_MUL powexpr -> infix    | powexpr
+    ?powexpr    : integer MATH_POW powexpr -> infix    | comprehensions
 
     ?comprehensions  : listcomp
     !?listcomp       : "[" listcompexpr "]" | gencomp
@@ -120,6 +120,7 @@ def parse(input_):
 
     if "DUMP_AST" in os.environ:
         res.dump()
+
     if "DUMP_UNPARSE" in os.environ:
         import ast
         print(ast.unparse(res))
@@ -127,6 +128,9 @@ def parse(input_):
 
 
 class Transmformator(LarkTransformer):
+    def __init__(self):
+        self.statements = []
+
     def subscript(self, tree):
         from ast import Subscript, Load
         return Subscript(tree[0], tree[1], Load())
@@ -169,7 +173,7 @@ class Transmformator(LarkTransformer):
 
     def matchexpr(self, tree):
         from ast import Name, Call, Load, Tuple
-        import astlib
+        from lampy import astlib
 
         name, patterns = tree[0], tree[1:]
         patterns = [Tuple(elts=[astlib.lazy(p[0]), p[1]], ctx=Load()) for p in patterns]
@@ -201,7 +205,6 @@ class Transmformator(LarkTransformer):
             return tree[0].unparse() + "(" + args + ")"
         else:
             raise ValueError
-
 
     def letfromimport(self, tree):
         from ast import ImportFrom, alias, Attribute
@@ -271,9 +274,6 @@ class Transmformator(LarkTransformer):
 
         return body
 
-    def __init__(self):
-        self.statements = []
-
     def letdef(self, tree):
         from ast import FunctionDef, arg, Lambda, arguments
 
@@ -284,10 +284,8 @@ class Transmformator(LarkTransformer):
             args=arguments(
                 posonlyargs=[],
                 args=[arg(a.id) for a in args],
-                vararg=arg("args"),
                 kwonlyargs=[],
                 kw_defaults=[],
-                kwarg=arg("kwargs"),
                 defaults=[],
             ),
             body=body,

@@ -69,14 +69,14 @@ class LetVisitor(NodeTransformer):
     def visit_FunctionDef(self, node):
         found = None
         node.decorator_list = list(
-            filter(lambda d: d.id not in ("letdec", "matchdec"), node.decorator_list)
+            filter(lambda d: d.id not in ("letdec", "matchdec"), node.decorator_list) 
         )
         self.generic_visit(node)
         return node
 
     def visit_Call(self, node):
         self.generic_visit(node)
-        import astlib
+        from lampy import astlib
         from ast import Call, arg, Starred, Load, Name, Tuple as ASTTuple
         if hasattr(node.func, "id") and node.func.id == "match":
             x = node.args[0]
