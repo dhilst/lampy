@@ -17,9 +17,12 @@ def test_ift_expr():
 def test_fact():
     assert parse("let def fact n = 1 if n == 0 else n * fact(n - 1) in fact(5)").eval() == 120
 
-def test_match_list():
+def test_match():
+    # Test default case
+    assert parse('match 1 with | _ => 1 end').eval() == 1
+
     # Test simple case
     assert parse('match 1 with | 1 => 1 end').eval() == 1
 
-    # Test default case
-    assert parse('match 1 with | _ => 1 end').eval() == 1
+    # Test list match
+    assert parse('match ([1, 2]) with | [] => [] | a, *b => a end').eval() == 1

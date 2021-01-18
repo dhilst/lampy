@@ -36,7 +36,7 @@ grammar = r"""
 
     matchexpr       : "match" atom "with" ("|" pattern)+ "end"
     pattern         :  pattern_left ARROW let
-    !pattern_left   : EMPTY | ID ("," "*"? ID)* | fqid "(" (arg|kwarg)* ")" | const
+    !pattern_left   : ID ("," "*"? ID)* | fqid "(" (arg|kwarg)* ")" | const
     unpack          : "*" ID
 
     ?ifternary  : let "if" boolexpr "else" let | boolexpr
@@ -62,14 +62,17 @@ grammar = r"""
 
     ?atom       : "(" let ")" | const | fqid
 
-    const       : bool | integer | dictconst | listconst | tupleconst 
+    const       : bool | integer | dictconst | listconst | tupleconst
                 | setconst | NONE | STRING_CONST
-    dictconst   : "{" atom ":" atom ("," atom ":" atom )* "}"
-    listconst   : "[" let ("," let)* "]"
+    ?dictconst   : "{" atom ":" atom ("," atom ":" atom )* "}" | dictempty
+    ?listconst   : "[" let ("," let)* "]" | listempty
     tupleconst  : "(" let "," (let | ("," let))* ")"
     setconst    : "{" let ("," let)* "}"
     integer     : /[+-]?\d+/ | /0x[a-fA-F]+/ | /0o[0-7]+/ | /0b[12]+/ | float
     float       : /[+-]?\d+\.\d+/
+
+    listempty   : EMPTY
+    dictempty   : "{}"
 
     fqalias     : fqid ("as" ID)?
     !relativeid : "."+ fqalias
@@ -131,6 +134,10 @@ class Transmformator(LarkTransformer):
     def __init__(self):
         self.statements = []
 
+    def listempty(self, tree):
+        from ast import List, Load
+        return List([], ctx=Load())
+
     def subscript(self, tree):
         from ast import Subscript, Load
         return Subscript(tree[0], tree[1], Load())
@@ -183,12 +190,16 @@ class Transmformator(LarkTransformer):
     def pattern(self, tree):
         from ast import Name
         if isinstance(tree[0], Name):
-            return (repr(tree[0].id), astlib.lamb(tree[0].id)(tree[2]))
-        return (tree[0], astlib.lamb()(tree[2]))
+            if tree[0].id == "_":
+                return (repr(tree[0].id), astlib.lamb()(tree[2]))
+            else:
+                return (repr(tree[0].id), astlib.lamb(tree[0].id)(tree[2]))
+        else:
+            return (tree[0], astlib.lamb()(tree[2]))
 
     def pattern_left(self, tree):
-        from ast import Name, Constant
-        if tree[0] << get("type") == "EMPTY":
+        from ast import Name, Constant, List
+        if type(tree[0]) is List and not tree[0].elts:
             return "[]"
         elif isinstance(tree[0], Constant):
             return repr(tree[0].value)
