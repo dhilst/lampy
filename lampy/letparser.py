@@ -179,43 +179,51 @@ class Transmformator(LarkTransformer):
         return let(tree[0])(tree[1])
 
     def matchexpr(self, tree):
-        from ast import Name, Call, Load, Tuple
-        from lampy import astlib
+        from ast import Name, Call, Load, Tuple, Constant
+        from lampy.astlib import e
 
         name, patterns = tree[0], tree[1:]
-        patterns = [Tuple(elts=[astlib.lazy(p[0]), p[1]], ctx=Load()) for p in patterns]
-        res = Call(Name("match", Load()), [name] + patterns, [])
+        def _pattern(pattern):
+            left, right = pattern
+            if left in ("[]", "_"):
+                right = e(f"lambda : {right}")
+            else:
+                right = e(f"lambda {left} : {right}")
+            left = Constant(left)
+            return Tuple(elts=[left, right], ctx=Load())
+        _patterns = list(map(_pattern, patterns))
+        __import__('ipdb').set_trace()
+        res = Call(Name("match", Load()), [name] + _patterns, [])
+        print(res.unparse())
         return res
 
     def pattern(self, tree):
         from ast import Name
-        if isinstance(tree[0], Name):
-            if tree[0].id == "_":
-                return (repr(tree[0].id), astlib.lamb()(tree[2]))
-            else:
-                return (repr(tree[0].id), astlib.lamb(tree[0].id)(tree[2]))
-        else:
-            return (tree[0], astlib.lamb()(tree[2]))
+        # return whole thing as an string list
+        return list(filter(lambda x: x != "=>", map((lambda t: t if type(t) is str else t.unparse()), tree)))
 
     def pattern_left(self, tree):
         from ast import Name, Constant, List
-        if type(tree[0]) is List and not tree[0].elts:
-            return "[]"
-        elif isinstance(tree[0], Constant):
-            return repr(tree[0].value)
-        elif isinstance(tree[0], Name):
-            return tree[0]
-        elif tree[0] << get("data") == "fqid":
-            args = []
-            for a in tree[0]:
-                if a << get("data") == "arg":
-                    args.append(a.children[0].id)
-                elif a << get("data") == "kwarg":
-                    args.append(f"{k}={v}" for k, v in a.items())
-            args = ", ".join(args)
-            return tree[0].unparse() + "(" + args + ")"
+        if len(tree) > 1:
+            return "".join(attrs(t, "id", "value") for t in tree)
         else:
-            raise ValueError
+            if type(tree[0]) is List and not tree[0].elts:
+                return "[]"
+            elif isinstance(tree[0], Constant):
+                return repr(tree[0].value)
+            elif isinstance(tree[0], Name):
+                return tree[0]
+            elif tree[0] << get("data") == "fqid":
+                args = []
+                for a in tree[0]:
+                    if a << get("data") == "arg":
+                        args.append(a.children[0].id)
+                    elif a << get("data") == "kwarg":
+                        args.append(f"{k}={v}" for k, v in a.items())
+                args = ", ".join(args)
+                return tree[0].unparse() + "(" + args + ")"
+            else:
+                raise ValueError
 
     def letfromimport(self, tree):
         from ast import ImportFrom, alias, Attribute
@@ -471,3 +479,6 @@ class Transmformator(LarkTransformer):
     def STRING_CONST(self, tree):
         from ast import Constant
         return Constant("".join(c for c in tree.value if c not in ("'", '"')))
+
+    def ARROW(self, tree):
+        return tree.value

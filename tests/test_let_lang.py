@@ -24,5 +24,7 @@ def test_match():
     # Test simple case
     assert parse('match 1 with | 1 => 1 end').eval() == 1
 
+
+def test_match_list():
     # Test list match
-    assert parse('match ([1, 2]) with | [] => [] | a, *b => a end').eval() == 1
+    assert parse('match [1, 2] with | [] => [] | a, *b => a end').eval() == 1
