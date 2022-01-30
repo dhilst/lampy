@@ -1,3 +1,4 @@
+import os
 from math import inf
 import re
 import enum
@@ -20,6 +21,11 @@ def _flat(it):
                 yield from i
         except TypeError:
             yield i
+
+
+def debug(*args):
+    if os.environ.get("LETPY_DEBUG"):
+        print(*args)
 
 
 def flat(it):
@@ -168,20 +174,30 @@ class Or(Parser):
 
 class Regex(Parser):
     def __init__(self, pattern):
-        self.pattern = re.compile(pattern)
+        self.text = pattern
+        self.pattern = re.compile(r"({})(\b|\s|$)".format(pattern))
 
     def run(self, input):
         input = input.skip_spaces()
         match = self.pattern.match(input.getall())
+        debug(
+            "Regex ",
+            self.text,
+            f"DOES MATCH '{match.group(1)}' "
+            if match is not None
+            else "DOES NOT MATCH",
+            "in ->",
+            input.getall(),
+        )
         if match is not None:
-            return Ok(match.group(0), input.clone(match.end(0)))
+            return Ok(match.group(1), input.clone(match.end(1)))
         else:
-            return Err(f"Expect regex {self.pattern} found {input.getall()}", input)
+            return Err(f"Expect regex {self.text} found '{input.getall()}'", input)
 
 
 class Lit(Parser):
     def __init__(self, pattern):
-        self.parser = Ignore(Regex(pattern))
+        self.parser = ~Regex(pattern)
 
     def run(self, input):
         return self.parser.run(input)
@@ -227,12 +243,9 @@ class Ignore(Parser):
         return r
 
 
-_keywords = set()
-
-
 class Keyword(Parser):
     def __init__(self, keyword):
-        _keywords.add(keyword)
+        self.keyword = keyword
         self.parser = ~Regex(keyword)
 
     def run(self, input):
@@ -240,14 +253,14 @@ class Keyword(Parser):
 
 
 class NotKeyword(Parser):
-    def __init__(self, parser):
+    def __init__(self, parser, *keywords):
+        self.keywords = keywords
         self.parser = parser
 
     def run(self, input):
-        for k in _keywords:
-            r = Regex(k).run(input)
-            if isinstance(r, Ok):
-                return Err(f"Unexpected keyword {k}", input)
+        for k in self.keywords:
+            if isinstance(k.run(input), Ok):
+                return Err(f"Unexpected keyword {k.keyword}", input)
 
         return self.parser.run(input)
 
@@ -265,14 +278,6 @@ class Group(Parser):
 
 
 class Left(Parser):
-    """Infix left associativite parser combinator
-
-    Accepts two parsers, a term and a operator, for example
-
-    >>> Left(Regex(r"\w"), Regex(r"\+")).run(Input("a + b + c + d")).value
-    [[['a', '+', 'b'], '+', 'c'], '+', 'd']
-    """
-
     @dataclass
     class Phrase:
         term: str
@@ -343,35 +348,48 @@ EQUAL = Lit("=")
 IN = Keyword("in")
 LPAR = Lit(r"\(")
 RPAR = Lit(r"\)")
-word = NotKeyword(Regex(r"\w+"))
+word = NotKeyword(Regex(r"\w+"), LET, FUN, FAT_ARROW, ARROW, IN)
 words = word * inf  # zero or more
 
 
 class Expr(Parser):
     def run(self, input: Input):
-        return (ParExpr() | Fun() | LetAssign() | Appl() | word).run(input)
+        debug("Expr", id(self))
+        res = (ParExpr() | Fun() | LetAssign() | Appl() | word).run(input)
+        debug("Expr ", id(self), "result ->", res)
+        return res
 
 
 class ParExpr(Parser):
     def run(self, input):
-        return (LPAR & Expr() & RPAR > AST.ParExpr).run(input)
+        debug("ParExpr", id(self))
+        res = (LPAR & Expr() & RPAR > AST.ParExpr).run(input)
+        debug("ParExpr", id(self), "result ->", res)
+        return res
 
 
 class Fun(Parser):
     def run(self, input):
-        return ((FUN & word & FAT_ARROW & Expr()) > AST.Fun).run(input)
+        debug("Fun", id(self))
+        res = ((FUN & word & FAT_ARROW & Expr()) > AST.Fun).run(input)
+        debug("Fun", id(self), "result ->", res)
+        return res
 
 
 class LetAssign(Parser):
     def run(self, input):
-        print("letlamb input", input)
-        return ((LET & word & EQUAL & Expr() & IN & Expr()) > AST.LetAssign).run(input)
+        debug("LetAssign", id(self))
+        res = ((LET & word & EQUAL & Expr() & IN & Expr()) > AST.LetAssign).run(input)
+        debug("LetAssign", id(self), "result ->", res)
+        return res
 
 
 class Appl(Parser):
     def run(self, input):
-        # This is wrooong
-        return ((word & Expr() | word) > AST.Appl).run(input)
+        debug("Appl", id(self))
+        res = ((Group(word & Expr()) > AST.Appl) | word).run(input)
+        debug("Appl", id(self), "result ->", res)
+        return res
 
 
 class AST:
@@ -392,7 +410,7 @@ class AST:
 
     @dataclass
     class Appl:
-        args: List[Expr]
+        arg: Expr
         fun: Expr
 
 
@@ -432,14 +450,39 @@ def test_combinators():
     _test_success(i, Regex("foo") & "bar" & "tar" & "zar", ["foo", "bar", "tar", "zar"])
     _test_success(i, LeftEmpty(Regex(r"\w+")), [[["foo", "bar"], "tar"], "zar"])
 
+    FUN = Keyword("fun")
+    FAT_ARROW = Keyword("=>")
+    word = NotKeyword(Regex(r"\w+"), FUN, FAT_ARROW)
+    r = FUN.run(Input("func"))
+    assert isinstance(r, Err) and r.error.startswith("Expect regex ")
+
+    _test_success("func", word, "func")
+    _test_success("fun foo => bar", (FUN & word & FAT_ARROW & word), ["foo", "bar"])
+
+    _test_success("(foo)", Lit(r"\(") & word & Lit(r"\)"), ["foo"])
+
 
 def test_lang():
-    _test_success("fun foo => bar", Expr(), AST.Fun(parm="foo", body="bar"))
-    _test_success(
-        "let foo = bar in foo",
-        LetAssign(),
-        AST.LetAssign(parm="foo", arg="bar", body="foo"),
-    )
+    # _test_success("foo bar", Expr(), AST.Appl(arg="foo", fun="bar"))
+    # _test_success(
+    #     "a b c d e func",
+    #     Expr(),
+    #     AST.Appl(
+    #         arg="a",
+    #         fun=AST.Appl(
+    #             arg="b",
+    #             fun=AST.Appl(
+    #                 arg="c", fun=AST.Appl(arg="d", fun=AST.Appl(arg="e", fun="func"))
+    #             ),
+    #         ),
+    #     ),
+    # )
+    # _test_success("fun foo => bar", Fun(), AST.Fun(parm="foo", body="bar"))
+    # _test_success(
+    #     "let foo = bar in foo",
+    #     LetAssign(),
+    #     AST.LetAssign(parm="foo", arg="bar", body="foo"),
+    # )
 
     _test_success(
         "let foo = (fun bar => tar) in foo",
@@ -471,11 +514,11 @@ def test_lang():
         "a b c d e func",
         Expr(),
         AST.Appl(
-            args="a",
+            arg="a",
             fun=AST.Appl(
-                args="b",
+                arg="b",
                 fun=AST.Appl(
-                    args="c", fun=AST.Appl(args="d", fun=AST.Appl(args="e", fun="func"))
+                    arg="c", fun=AST.Appl(arg="d", fun=AST.Appl(arg="e", fun="func"))
                 ),
             ),
         ),
