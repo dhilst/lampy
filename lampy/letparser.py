@@ -192,7 +192,6 @@ class Transmformator(LarkTransformer):
             left = Constant(left)
             return Tuple(elts=[left, right], ctx=Load())
         _patterns = list(map(_pattern, patterns))
-        __import__('ipdb').set_trace()
         res = Call(Name("match", Load()), [name] + _patterns, [])
         print(res.unparse())
         return res
