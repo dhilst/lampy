@@ -348,16 +348,26 @@ EQUAL = Lit("=")
 IN = Keyword("in")
 LPAR = Lit(r"\(")
 RPAR = Lit(r"\)")
-word = NotKeyword(Regex(r"\w+"), LET, FUN, FAT_ARROW, ARROW, IN)
-words = word * inf  # zero or more
+COMMA = Lit(",")
+MATCH = Keyword("match")
+WITH = Keyword("with")
+PIPE = Lit(r"\|")
+END = Keyword("end")
+keywords = (LET, FUN, FAT_ARROW, ARROW, IN, MATCH, WITH, END)
+word = NotKeyword(Regex(r"\w+"), *keywords)
 
 
 class Expr(Parser):
     def run(self, input: Input):
         debug("Expr", id(self))
-        res = (ParExpr() | Fun() | LetAssign() | Appl() | word).run(input)
+        res = (Fun() | LetAssign() | MatchExpr() | Appl() | Atom()).run(input)
         debug("Expr ", id(self), "result ->", res)
         return res
+
+
+class Atom(Parser):
+    def run(self, input):
+        return (ParExpr() | Product() | word).run(input)
 
 
 class ParExpr(Parser):
@@ -392,6 +402,36 @@ class Appl(Parser):
         return res
 
 
+class Product(Parser):
+    def run(self, input):
+        debug("Product", id(self))
+        res = ((LPAR & Expr() & COMMA & Expr() & RPAR) > AST.Product).run(input)
+        debug("Product", id(self), "result ->", res)
+        return res
+
+
+class MatchExpr(Parser):
+    def run(self, input):
+        return (
+            (
+                MATCH
+                & Expr()
+                & WITH
+                & Group(
+                    (PIPE & (PatternExpr() & FAT_ARROW & Expr()) > AST.MatchBranch)
+                    * inf
+                )
+                & END
+            )
+            > AST.Match
+        ).run(input)
+
+
+class PatternExpr(Parser):
+    def run(self, input):
+        return (Product() | word).run(input)
+
+
 class AST:
     @dataclass
     class Fun:
@@ -412,6 +452,21 @@ class AST:
     class Appl:
         arg: Expr
         fun: Expr
+
+    @dataclass
+    class Product:
+        left: Expr
+        right: Expr
+
+    @dataclass
+    class MatchBranch:
+        pattern: PatternExpr
+        body: Expr
+
+    @dataclass
+    class Match:
+        expr: Expr
+        branches: Tuple["AST.MatchBranch"]
 
 
 def _test_fail_preserves_input(input, parser):
@@ -463,26 +518,26 @@ def test_combinators():
 
 
 def test_lang():
-    # _test_success("foo bar", Expr(), AST.Appl(arg="foo", fun="bar"))
-    # _test_success(
-    #     "a b c d e func",
-    #     Expr(),
-    #     AST.Appl(
-    #         arg="a",
-    #         fun=AST.Appl(
-    #             arg="b",
-    #             fun=AST.Appl(
-    #                 arg="c", fun=AST.Appl(arg="d", fun=AST.Appl(arg="e", fun="func"))
-    #             ),
-    #         ),
-    #     ),
-    # )
-    # _test_success("fun foo => bar", Fun(), AST.Fun(parm="foo", body="bar"))
-    # _test_success(
-    #     "let foo = bar in foo",
-    #     LetAssign(),
-    #     AST.LetAssign(parm="foo", arg="bar", body="foo"),
-    # )
+    _test_success("foo bar", Expr(), AST.Appl(arg="foo", fun="bar"))
+    _test_success(
+        "a b c d e func",
+        Expr(),
+        AST.Appl(
+            arg="a",
+            fun=AST.Appl(
+                arg="b",
+                fun=AST.Appl(
+                    arg="c", fun=AST.Appl(arg="d", fun=AST.Appl(arg="e", fun="func"))
+                ),
+            ),
+        ),
+    )
+    _test_success("fun foo => bar", Fun(), AST.Fun(parm="foo", body="bar"))
+    _test_success(
+        "let foo = bar in foo",
+        LetAssign(),
+        AST.LetAssign(parm="foo", arg="bar", body="foo"),
+    )
 
     _test_success(
         "let foo = (fun bar => tar) in foo",
@@ -520,6 +575,20 @@ def test_lang():
                 fun=AST.Appl(
                     arg="c", fun=AST.Appl(arg="d", fun=AST.Appl(arg="e", fun="func"))
                 ),
+            ),
+        ),
+    )
+
+    _test_success("(a, b)", Expr(), AST.Product(left="a", right="b"))
+
+    _test_success(
+        "match x with | y => something | z => other end",
+        Expr(),
+        AST.Match(
+            expr="x",
+            branches=(
+                AST.MatchBranch(pattern="y", body="something"),
+                AST.MatchBranch(pattern="z", body="other"),
             ),
         ),
     )
