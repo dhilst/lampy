@@ -334,7 +334,11 @@ class LeftEmpty(Parser):
         return self._run(input)
 
 
+# Terminals
 LET = Keyword("let")  # Literal, parse result is ignored
+FUN = Keyword("fun")
+FAT_ARROW = Keyword("=>")
+ARROW = Keyword("->")
 EQUAL = Lit("=")
 IN = Keyword("in")
 LPAR = Lit(r"\(")
@@ -345,7 +349,7 @@ words = word * inf  # zero or more
 
 class Expr(Parser):
     def run(self, input: Input):
-        return (ParExpr() | LetLamb() | LetAssign() | Appl() | word).run(input)
+        return (ParExpr() | Fun() | LetAssign() | Appl() | word).run(input)
 
 
 class ParExpr(Parser):
@@ -353,16 +357,12 @@ class ParExpr(Parser):
         return (LPAR & Expr() & RPAR > AST.ParExpr).run(input)
 
 
-class LetLamb(Parser):
-    "A lambda in format `let x in [expr]`"
-
+class Fun(Parser):
     def run(self, input):
-        return ((LET & word & IN & Expr()) > AST.LetLamb).run(input)
+        return ((FUN & word & FAT_ARROW & Expr()) > AST.Fun).run(input)
 
 
 class LetAssign(Parser):
-    "An application in format `let x = 1 in [expr]`"
-
     def run(self, input):
         print("letlamb input", input)
         return ((LET & word & EQUAL & Expr() & IN & Expr()) > AST.LetAssign).run(input)
@@ -370,12 +370,13 @@ class LetAssign(Parser):
 
 class Appl(Parser):
     def run(self, input):
-        return ((word & Expr() > AST.Appl) | word).run(input)
+        # This is wrooong
+        return ((word & Expr() | word) > AST.Appl).run(input)
 
 
 class AST:
     @dataclass
-    class LetLamb:
+    class Fun:
         parm: str
         body: Expr
 
@@ -433,7 +434,7 @@ def test_combinators():
 
 
 def test_lang():
-    _test_success("let foo in bar", LetLamb(), AST.LetLamb(parm="foo", body="bar"))
+    _test_success("fun foo => bar", Expr(), AST.Fun(parm="foo", body="bar"))
     _test_success(
         "let foo = bar in foo",
         LetAssign(),
@@ -441,11 +442,11 @@ def test_lang():
     )
 
     _test_success(
-        "let foo = (let bar in tar) in foo",
+        "let foo = (fun bar => tar) in foo",
         Expr(),
         AST.LetAssign(
             parm="foo",
-            arg=AST.ParExpr(AST.LetLamb(parm="bar", body="tar")),
+            arg=AST.ParExpr(AST.Fun(parm="bar", body="tar")),
             body="foo",
         ),
     )
@@ -459,9 +460,9 @@ def test_lang():
     )
 
     _test_success(
-        "let f = let x in x in f",
+        "let f = fun x => x in f",
         Expr(),
-        AST.LetAssign(parm="f", arg=AST.LetLamb(parm="x", body="x"), body="f"),
+        AST.LetAssign(parm="f", arg=AST.Fun(parm="x", body="x"), body="f"),
     )
 
     # Function application is reversed
