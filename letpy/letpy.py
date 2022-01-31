@@ -196,7 +196,7 @@ class Regex(Parser):
         match = self.pattern.match(input.getall())
         if match is not None:
             Debug.green(
-                "Regex        MATCH ",
+                f"Regex {self.text} MATCH ",
                 match.group(1),
                 "in ->",
                 input.getall(),
@@ -204,7 +204,7 @@ class Regex(Parser):
             return Ok(match.group(1), input.clone(match.end(1)))
         else:
             Debug.red(
-                "Regex DO NOT MATCH ",
+                f"Regex {self.text} DO NOT MATCH ",
                 "in ->",
                 input.getall(),
             )
@@ -377,9 +377,17 @@ class Expr(Parser):
     def run(self, input: Input):
         Debug.default("Expr", id(self))
         res = (
-            Fun() | LetAssign() | MatchExpr() | Product() | ParExpr() | Appl() | word
+            Fun() | LetAssign() | MatchExpr() | Product() | ParExpr() | Appl() | Var()
         ).run(input)
         Debug.default("Expr ", id(self), "result ->", res)
+        return res
+
+
+class Var(Parser):
+    def run(self, input):
+        Debug.default("Var", id(self))
+        res = (word > AST.Var).run(input)
+        Debug.default("Var", id(self), "result ->", res)
         return res
 
 
@@ -447,6 +455,10 @@ class PatternExpr(Parser):
 
 class AST:
     @dataclass
+    class Var:
+        name: str
+
+    @dataclass
     class Fun:
         parm: str
         body: Expr
@@ -492,6 +504,11 @@ def _test_success(input, parser, output):
     i = Input(input)
     r = parser.run(i)
     assert isinstance(r, Ok) and r.value == output
+
+
+def _test_failure(input, parser):
+    i = Input(input)
+    assert isinstance(parser.run(i), Err)
 
 
 def test_input():
@@ -593,6 +610,8 @@ def test_lang():
     # )
 
     # _test_success("(a, b)", Expr(), AST.Product(left="a", right="b"))
+
+    _test_failure("a", Appl())
     _test_success(
         "(a, (b, c))",
         Expr(),
